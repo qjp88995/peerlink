@@ -46,8 +46,9 @@ peerlink/
 │   └── signaling/            # @peerlink/signaling — 轻量 ws + zod + pino 信令服务
 ├── packages/
 │   └── protocol/             # @peerlink/protocol — zod 定义的信令消息 + 文件分片协议
-├── docker/                   # Dockerfile(web / signaling)
-├── docker-compose.yml        # 本地一键起 web + signaling(+ Traefik 反代)
+├── docker/Dockerfile.dev     # 共享开发镜像(pnpm + node)，所有 app 服务复用
+├── docker-compose.yml        # 容器内开发:deps 安装 + traefik + web + signaling
+├── docker-compose.override.yml  # 仅把 Traefik 端口暴露到宿主机
 ├── .github/workflows/        # CI：lint / typecheck / test
 ├── eslint.config.base.mjs    # 共享 ESLint 基础配置
 ├── tsconfig.base.json        # 共享 TS 基础配置
@@ -97,11 +98,21 @@ peerlink/
 - `storage` — 接收端写入抽象，多实现按浏览器能力探测选择。
 - `ui` — React 19 + Tailwind v4 + TanStack Router（文件式路由）+ zustand（连接/传输状态）+ sonner（提示）+ lucide-react（图标），`lib/cn.ts` 统一 className 合并。
 
-### 2.4 部署形态
+### 2.4 开发环境（容器内开发，对齐 smart-property）
 
-- `apps/web`：纯静态站点，可部署到 Vercel 或任意静态托管。
-- `apps/signaling`：常驻 Node 进程，小实例即可。
-- 本地与自托管走 **Docker Compose**（沿用 smart-property 的 Traefik 反代模式）：`docker/` 放两个 Dockerfile，`docker-compose.yml` 一键起 `web` + `signaling`，`.env.example` 提供 ICE/TURN、端口等配置。
+**开发全程在 Docker 容器内进行**，宿主机只需 Docker。沿用 smart-property 的 dev compose 范式：
+
+- **共享开发镜像** `docker/Dockerfile.dev`：装好 pnpm/node，用 `UID`/`GID` build args 对齐宿主用户避免文件权限问题；所有 app 服务复用同一镜像（compose 里用 YAML anchor 复用）。
+- **一次性安装服务** `deps`：app 服务启动前先跑一次 `pnpm install`，完成后进入 `service_completed_successfully`。
+- **源码 bind-mount**：`./:/workspace` 挂载进容器，`node_modules` / pnpm store 落在宿主项目目录，依赖缓存自然复用，无命名卷要管理。
+- **Traefik 反代**：容器都在内部 bridge 网络，仅 Traefik 端口经 `docker-compose.override.yml` 暴露到宿主。路由：
+  - `http://localhost:${TRAEFIK_PORT}/`        → `web:5173`（Vite dev server）
+  - `http://localhost:${TRAEFIK_PORT}/signal`  → `signaling:PORT`（WebSocket，Traefik 自动处理 upgrade）
+- **Vite HMR 适配**：`web` 容器设 `RUNNING_IN_DOCKER=1` + `TRAEFIK_PORT`，HMR client 经 Traefik 端口回连（参照 smart-property `apps/user/vite.config.ts`）。
+- 无 db / redis（信令服务内存态），dev compose 仅 `deps` + `traefik` + `web` + `signaling` 四个服务。
+- `.env.example` 提供 `TRAEFIK_PORT`、ICE/STUN/TURN 配置等。
+
+> 线上 / 生产部署不在本 spec 范围（用户自有安排）。
 
 ### 2.5 工程约定（对齐 smart-property 开发模式）
 
