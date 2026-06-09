@@ -22,6 +22,9 @@ services:
   # 一次性安装依赖；app 服务启动前完成。
   deps:
     <<: *app-build
+    # CI=true 让 pnpm 在无 TTY 的容器里跳过 node_modules 清理交互提示。
+    environment:
+      CI: 'true'
     command: pnpm install
     volumes:
       - ./:/workspace
