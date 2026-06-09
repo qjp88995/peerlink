@@ -74,6 +74,29 @@ services:
       - traefik.http.services.pl-signal.loadbalancer.server.port=3001
 
   # ─── 计划 3 加入 web 服务 ───
+  web:
+    <<: *app-build
+    restart: unless-stopped
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      signaling:
+        condition: service_started
+    environment:
+      RUNNING_IN_DOCKER: '1'
+      TRAEFIK_PORT: ${TRAEFIK_PORT:-8894}
+    command: pnpm --filter @peerlink/web dev
+    volumes:
+      - ./:/workspace
+    networks:
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=peerlink_internal
+      - traefik.http.routers.pl-web.rule=PathPrefix(`/`)
+      - traefik.http.routers.pl-web.entrypoints=web
+      - traefik.http.routers.pl-web.priority=1
+      - traefik.http.services.pl-web.loadbalancer.server.port=5173
 
 networks:
   internal:
