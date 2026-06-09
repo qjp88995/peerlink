@@ -21,6 +21,7 @@ import { FolderZipWriter } from '@/core/storage/zip-writer';
 import { iceServersFromEnv } from '@/lib/ice-config';
 
 function signalUrl(): string {
+  if (import.meta.env.VITE_SIGNAL_URL) return import.meta.env.VITE_SIGNAL_URL;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const path = import.meta.env.VITE_SIGNAL_PATH ?? '/signal';
   return `${proto}://${location.host}${path}`;
