@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -26,6 +26,7 @@
     "eslint-plugin-simple-import-sort": "catalog:",
     "globals": "catalog:",
     "pino-pretty": "catalog:",
+    "tsx": "^4.19.2",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:"
