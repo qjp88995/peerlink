@@ -1,8 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import { Check, FileDown, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
+import {
+  decideWriter,
+  detectCapabilities,
+  manifestHasDirectory,
+} from '@/core/storage/writer';
 import { Progress } from '@/features/common/Progress';
 import { Button, Card } from '@/features/common/ui';
 import { formatBytes } from '@/lib/format';
@@ -14,6 +19,24 @@ export function ReceivePanel({ roomId }: { roomId: string }) {
   const sessionRef = useRef<ReturnType<typeof startReceiveSession> | null>(
     null
   );
+
+  const decision = useMemo(
+    () =>
+      store.manifest
+        ? decideWriter(detectCapabilities(), {
+            fileCount: store.manifest.length,
+            hasDirectory: manifestHasDirectory(store.manifest),
+          })
+        : null,
+    [store.manifest]
+  );
+  const unsupported = decision?.kind === 'unsupported';
+
+  useEffect(() => {
+    if (store.phase === 'awaiting-accept' && unsupported) {
+      sessionRef.current?.reject();
+    }
+  }, [store.phase, unsupported]);
 
   useEffect(() => {
     store.setRole('receiver');
@@ -83,22 +106,32 @@ export function ReceivePanel({ roomId }: { roomId: string }) {
           </ul>
         </div>
 
-        <div className="flex gap-2">
-          <Button
-            className="flex-1"
-            onClick={() => sessionRef.current?.accept()}
-            data-testid="accept"
+        {unsupported ? (
+          <div
+            role="alert"
+            data-testid="unsupported"
+            className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-3 text-sm text-danger"
           >
-            <Check className="size-4" /> 接受并接收
-          </Button>
-          <Button
-            variant="danger"
-            onClick={() => sessionRef.current?.reject()}
-            data-testid="reject"
-          >
-            <X className="size-4" /> 拒绝
-          </Button>
-        </div>
+            {decision?.kind === 'unsupported' && decision.reason}
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={() => sessionRef.current?.accept()}
+              data-testid="accept"
+            >
+              <Check className="size-4" /> 接受并接收
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => sessionRef.current?.reject()}
+              data-testid="reject"
+            >
+              <X className="size-4" /> 拒绝
+            </Button>
+          </div>
+        )}
       </Card>
     );
   }
