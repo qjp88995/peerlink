@@ -15,7 +15,6 @@
   "dependencies": {
     "@peerlink/protocol": "workspace:*",
     "@tanstack/react-router": "catalog:",
-    "@zip.js/zip.js": "catalog:",
     "clsx": "catalog:",
     "lucide-react": "catalog:",
     "qrcode": "catalog:",

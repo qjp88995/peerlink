@@ -12,12 +12,11 @@ import { SignalingClient } from '@/core/signaling-client';
 import { BlobWriter } from '@/core/storage/blob-writer';
 import { FsAccessWriter } from '@/core/storage/fs-access-writer';
 import {
-  chooseWriterKind,
+  decideWriter,
   detectCapabilities,
   manifestHasDirectory,
   type Writer,
 } from '@/core/storage/writer';
-import { FolderZipWriter } from '@/core/storage/zip-writer';
 import { iceServersFromEnv } from '@/lib/ice-config';
 import { throttleProgress } from '@/lib/progress-throttle';
 
@@ -107,30 +106,20 @@ export function startSendSession(files: File[], cb: SessionCallbacks) {
   };
 }
 
-function makeWriter(files: FileEntry[]): Promise<Writer> {
-  const caps = detectCapabilities();
-  const hasDirectory = manifestHasDirectory(files);
-  const kind = chooseWriterKind(caps, {
+async function makeWriter(files: FileEntry[]): Promise<Writer> {
+  const decision = decideWriter(detectCapabilities(), {
     fileCount: files.length,
-    hasDirectory,
+    hasDirectory: manifestHasDirectory(files),
   });
-  if (kind === 'fs-access') {
-    return window.showDirectoryPicker!().then(
-      root => new FsAccessWriter({ files }, root)
-    );
+  // UI 已在 manifest 阶段门控 unsupported，此处仅作防御。
+  if (decision.kind === 'unsupported') throw new Error(decision.reason);
+  if (decision.kind === 'fs-access') {
+    const root = await window.showDirectoryPicker!();
+    return new FsAccessWriter({ files }, root);
   }
-  if (kind === 'zip') {
-    return Promise.resolve(
-      new FolderZipWriter({ files }, blob =>
-        triggerDownload('peerlink.zip', blob)
-      )
-    );
-  }
-  return Promise.resolve(
-    new BlobWriter(
-      { files },
-      { onFile: (name, blob) => triggerDownload(name, blob) }
-    )
+  return new BlobWriter(
+    { files },
+    { onFile: (name, blob) => triggerDownload(name, blob) }
   );
 }
 
