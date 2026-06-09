@@ -8,7 +8,9 @@ ARG GID=1000
 RUN groupmod -g "${GID}" node 2>/dev/null || true; \
     usermod -u "${UID}" -g "${GID}" node 2>/dev/null || true
 
-RUN corepack enable
+# 构建期就把 pnpm 烧进镜像（经国内镜像源），避免运行时 corepack 联网下载。
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 WORKDIR /workspace
 USER node

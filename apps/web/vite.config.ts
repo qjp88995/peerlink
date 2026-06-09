@@ -20,6 +20,9 @@ export default defineConfig(({ mode }) => {
       host: true,
       port: 5173,
       strictPort: true,
+      // 容器内经 Traefik 反代、或从局域网其它设备访问时，Host 头不是
+      // localhost，Vite 的 host 检查会拦截（403）。这里放开。
+      allowedHosts: insideDocker ? true : undefined,
       hmr: insideDocker ? { clientPort: traefikPort } : true,
       proxy: insideDocker
         ? undefined

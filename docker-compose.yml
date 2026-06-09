@@ -25,7 +25,8 @@ services:
     # CI=true 让 pnpm 在无 TTY 的容器里跳过 node_modules 清理交互提示。
     environment:
       CI: 'true'
-    command: pnpm install
+    # node_modules/lockfile 已 bind-mount 进来，离线安装即可（容器内通常连不上 registry）。
+    command: pnpm install --frozen-lockfile --prefer-offline
     volumes:
       - ./:/workspace
     networks:
@@ -38,6 +39,9 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=peerlink_internal
+      # 只认本 compose 项目的容器，避免读到宿主上其它项目（smart-property 等）
+      # 的 Traefik 标签，防止面板混入 /admin 等路由、以及 PathPrefix `/` 撞车。
+      - --providers.docker.constraints=Label(`com.docker.compose.project`,`peerlink`)
       - --entrypoints.web.address=:80
       - --api.insecure=true
       - --api.dashboard=true

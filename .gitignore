@@ -2,6 +2,8 @@ node_modules/
 .pnpm-store/
 dist/
 .turbo/
+.tanstack/
+.vite/
 *.tsbuildinfo
 .env
 .DS_Store
