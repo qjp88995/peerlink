@@ -1,5 +1,8 @@
-/** 默认数据块大小（字节）。16 KB 跨浏览器最安全。 */
-export const DEFAULT_CHUNK_SIZE = 16 * 1024;
+/**
+ * 默认数据块大小（字节）。48 KB：加上 data 帧头后整帧仍 < 64 KB，跨浏览器安全，
+ * 同时比 16 KB 显著减少分片数（更少的读盘 / 发送 / 进度上报开销）。
+ */
+export const DEFAULT_CHUNK_SIZE = 48 * 1024;
 
 /** 探测到更大 maxMessageSize 时可提升到的上限（字节）。 */
 export const MAX_CHUNK_SIZE = 64 * 1024;

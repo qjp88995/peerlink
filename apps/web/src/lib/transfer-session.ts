@@ -19,6 +19,7 @@ import {
 } from '@/core/storage/writer';
 import { FolderZipWriter } from '@/core/storage/zip-writer';
 import { iceServersFromEnv } from '@/lib/ice-config';
+import { throttleProgress } from '@/lib/progress-throttle';
 
 function signalUrl(): string {
   if (import.meta.env.VITE_SIGNAL_URL) return import.meta.env.VITE_SIGNAL_URL;
@@ -83,7 +84,7 @@ export function startSendSession(files: File[], cb: SessionCallbacks) {
           const sender = new TransferSender(
             rtcSendChannel(peer.channel),
             sources,
-            { onProgress: cb.onProgress }
+            { onProgress: throttleProgress(cb.onProgress) }
           );
           await sender.streamAll();
           cb.onPhase('done');
@@ -183,7 +184,7 @@ export function startReceiveSession(roomId: string, cb: SessionCallbacks) {
         { type: 'manifest', files: manifestFiles, totalSize: total },
         writer,
         {
-          onProgress: cb.onProgress,
+          onProgress: throttleProgress(cb.onProgress),
           onComplete: () => cb.onPhase('done'),
         }
       );
