@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────
+# 本地开发 compose。所有 app 跑在容器内，Traefik 统一反代。
+# 宿主只暴露 Traefik 端口（见 docker-compose.override.yml）。
+#
+# 路由（计划 2/3 接入 app 服务后生效）：
+#   http://localhost:${TRAEFIK_PORT}/        → web:5173 (Vite)
+#   http://localhost:${TRAEFIK_PORT}/signal  → signaling (WebSocket)
+#
+# 生产部署不在此文件范围。
+# ─────────────────────────────────────────────────────────────
+
+x-app-build: &app-build
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.dev
+    args:
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+  image: peerlink-dev:latest
+
+services:
+  # 一次性安装依赖；app 服务启动前完成。
+  deps:
+    <<: *app-build
+    command: pnpm install
+    volumes:
+      - ./:/workspace
+    networks:
+      - internal
+
+  traefik:
+    image: traefik:latest
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=peerlink_internal
+      - --entrypoints.web.address=:80
+      - --api.insecure=true
+      - --api.dashboard=true
+      - --log.level=INFO
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+    # 宿主端口映射在 docker-compose.override.yml。
+
+  # ─── 计划 2 加入 signaling 服务 ───
+  # ─── 计划 3 加入 web 服务 ───
+
+networks:
+  internal:
+    name: peerlink_internal
+    driver: bridge

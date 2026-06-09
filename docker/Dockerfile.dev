@@ -1,0 +1,17 @@
+# 共享开发镜像：所有 app 服务复用。源码 bind-mount，依赖装在挂载目录。
+FROM node:24-bookworm-slim
+
+ARG UID=1000
+ARG GID=1000
+
+# 用宿主 UID/GID 创建用户，避免 bind-mount 文件权限问题。
+RUN groupmod -g "${GID}" node 2>/dev/null || true; \
+    usermod -u "${UID}" -g "${GID}" node 2>/dev/null || true
+
+RUN corepack enable
+
+WORKDIR /workspace
+USER node
+
+# 实际命令由 compose 的 command 指定（pnpm install / pnpm --filter ... dev）。
+CMD ["bash"]

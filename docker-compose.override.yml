@@ -1,0 +1,8 @@
+# 仅把 Traefik 端口暴露到宿主。端口须避开已有项目：
+# smart-property=8888/8889, stock-trading=8890/8891, agent-x=8892/8893。
+# PeerLink 用 8894/8895。
+services:
+  traefik:
+    ports:
+      - '${TRAEFIK_PORT:-8894}:80'
+      - '${TRAEFIK_DASHBOARD_PORT:-8895}:8080'
