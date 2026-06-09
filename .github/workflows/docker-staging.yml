@@ -1,0 +1,134 @@
+name: Docker Staging
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_SIGNALING: ghcr.io/${{ github.repository_owner }}/peerlink-signaling
+  IMAGE_WEB: ghcr.io/${{ github.repository_owner }}/peerlink-web
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-signaling:
+    name: Build & Push Signaling (staging)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_SIGNALING }}
+          tags: |
+            type=raw,value=staging
+
+      - name: Build and push signaling image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.signaling
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=signaling
+          cache-to: type=gha,mode=max,scope=signaling
+
+  build-web:
+    name: Build & Push Web (staging)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_WEB }}
+          tags: |
+            type=raw,value=staging
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.web
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  check-sync:
+    name: Check sync configuration
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - name: Check if sync is configured
+        id: check
+        env:
+          SYNC_WEBHOOK_URL: ${{ secrets.SYNC_WEBHOOK_URL }}
+        run: |
+          if [ -n "$SYNC_WEBHOOK_URL" ]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
+  notify-sync:
+    name: Trigger TCR sync
+    runs-on: ubuntu-latest
+    needs: [build-signaling, build-web, check-sync]
+    if: needs.check-sync.outputs.enabled == 'true'
+    strategy:
+      matrix:
+        package: [peerlink-signaling, peerlink-web]
+    steps:
+      - name: Trigger sync for ${{ matrix.package }}:staging
+        env:
+          WEBHOOK_SECRET: ${{ secrets.SYNC_WEBHOOK_SECRET }}
+        run: |
+          PAYLOAD=$(jq -cn \
+            --arg package "${{ matrix.package }}" \
+            --arg owner "${{ github.repository_owner }}" \
+            --arg tag "staging" \
+            '{action:"published",registry_package:{name:$package,owner:{login:$owner},package_version:{container_metadata:{tag:{name:$tag}}}}}')
+          SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print "sha256="$2}')
+          curl -sf -X POST ${{ secrets.SYNC_WEBHOOK_URL }}/hooks/sync-image \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: $SIG" \
+            -d "$PAYLOAD"

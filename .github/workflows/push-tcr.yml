@@ -1,0 +1,76 @@
+name: Push to Tencent TCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to sync to TCR'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - latest
+          - both
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check-sync:
+    name: Check sync configuration
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - name: Check if sync is configured
+        id: check
+        env:
+          SYNC_WEBHOOK_URL: ${{ secrets.SYNC_WEBHOOK_URL }}
+        run: |
+          if [ -n "$SYNC_WEBHOOK_URL" ]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
+  push-tcr:
+    name: Trigger TCR sync
+    runs-on: ubuntu-latest
+    needs: [check-sync]
+    if: needs.check-sync.outputs.enabled == 'true'
+    strategy:
+      matrix:
+        package: [peerlink-signaling, peerlink-web]
+    steps:
+      - name: Trigger sync for ${{ matrix.package }}:staging
+        if: ${{ inputs.tag == 'staging' || inputs.tag == 'both' }}
+        env:
+          WEBHOOK_SECRET: ${{ secrets.SYNC_WEBHOOK_SECRET }}
+        run: |
+          PAYLOAD=$(jq -cn \
+            --arg package "${{ matrix.package }}" \
+            --arg owner "${{ github.repository_owner }}" \
+            --arg tag "staging" \
+            '{action:"published",registry_package:{name:$package,owner:{login:$owner},package_version:{container_metadata:{tag:{name:$tag}}}}}')
+          SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print "sha256="$2}')
+          curl -sf -X POST ${{ secrets.SYNC_WEBHOOK_URL }}/hooks/sync-image \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: $SIG" \
+            -d "$PAYLOAD"
+
+      - name: Trigger sync for ${{ matrix.package }}:latest
+        if: ${{ inputs.tag == 'latest' || inputs.tag == 'both' }}
+        env:
+          WEBHOOK_SECRET: ${{ secrets.SYNC_WEBHOOK_SECRET }}
+        run: |
+          PAYLOAD=$(jq -cn \
+            --arg package "${{ matrix.package }}" \
+            --arg owner "${{ github.repository_owner }}" \
+            --arg tag "latest" \
+            '{action:"published",registry_package:{name:$package,owner:{login:$owner},package_version:{container_metadata:{tag:{name:$tag}}}}}')
+          SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print "sha256="$2}')
+          curl -sf -X POST ${{ secrets.SYNC_WEBHOOK_URL }}/hooks/sync-image \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: $SIG" \
+            -d "$PAYLOAD"

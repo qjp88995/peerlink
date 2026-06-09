@@ -42,6 +42,9 @@ catalogs:
     clsx:
       specifier: ^2.1.1
       version: 2.1.1
+    esbuild:
+      specifier: ^0.28.0
+      version: 0.28.0
     eslint:
       specifier: ^10.2.1
       version: 10.4.1
@@ -168,6 +171,9 @@ importers:
       '@types/ws':
         specifier: 'catalog:'
         version: 8.18.1
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.28.0
       eslint:
         specifier: 'catalog:'
         version: 10.4.1(jiti@2.7.0)

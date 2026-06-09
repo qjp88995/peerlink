@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:server": "node build.mjs",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint .",
@@ -23,6 +24,7 @@
     "@types/node": "catalog:",
     "@types/ws": "catalog:",
     "eslint": "catalog:",
+    "esbuild": "catalog:",
     "eslint-plugin-simple-import-sort": "catalog:",
     "globals": "catalog:",
     "pino-pretty": "catalog:",
