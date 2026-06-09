@@ -10,8 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "e2e": "playwright test"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@peerlink/protocol": "workspace:*",
@@ -28,7 +27,6 @@
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
-    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/router-plugin": "catalog:",
     "@types/node": "catalog:",

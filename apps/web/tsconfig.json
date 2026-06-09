@@ -8,5 +8,5 @@
     "paths": { "@/*": ["./src/*"] },
     "noEmit": true
   },
-  "include": ["src", "e2e"]
+  "include": ["src"]
 }
