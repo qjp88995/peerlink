@@ -8,7 +8,9 @@ export interface SignalingConfig {
   reapIntervalMs: number;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): SignalingConfig {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env
+): SignalingConfig {
   return {
     port: Number(env.SIGNALING_PORT ?? 3001),
     path: env.SIGNALING_PATH ?? '/signal',

@@ -29,6 +29,14 @@
       "prettier --write",
       "eslint --fix -c packages/protocol/eslint.config.mjs"
     ],
+    "apps/signaling/**/*.ts": [
+      "prettier --write",
+      "eslint --fix -c apps/signaling/eslint.config.mjs"
+    ],
+    "apps/web/**/*.{ts,tsx}": [
+      "prettier --write",
+      "eslint --fix -c apps/web/eslint.config.js"
+    ],
     "*.{json,md,css,yml,yaml}": [
       "prettier --write"
     ]

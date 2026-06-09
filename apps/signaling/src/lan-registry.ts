@@ -1,7 +1,16 @@
 import type { LanPeer } from '@peerlink/protocol';
 
 const COLORS = ['红色', '蓝色', '绿色', '橙色', '紫色', '金色', '青色', '粉色'];
-const ANIMALS = ['河马', '老虎', '熊猫', '海豚', '企鹅', '孔雀', '狐狸', '松鼠'];
+const ANIMALS = [
+  '河马',
+  '老虎',
+  '熊猫',
+  '海豚',
+  '企鹅',
+  '孔雀',
+  '狐狸',
+  '松鼠',
+];
 
 export function generateDeviceName(rng: () => number = Math.random): string {
   const color = COLORS[Math.floor(rng() * COLORS.length)];

@@ -108,7 +108,9 @@ export class SignalingServer {
             type: 'error',
             code: result.code,
             message:
-              result.code === 'ROOM_FULL' ? '该房间已被占用' : '房间不存在或已失效',
+              result.code === 'ROOM_FULL'
+                ? '该房间已被占用'
+                : '房间不存在或已失效',
           });
           return;
         }
@@ -132,7 +134,10 @@ export class SignalingServer {
         const roomId = this.rooms.createRoom(client.peerId);
         const join = this.rooms.joinRoom(roomId, target.peerId);
         if (join.ok) {
-          this.send(client.peerId, { type: 'peer-joined', peerId: target.peerId });
+          this.send(client.peerId, {
+            type: 'peer-joined',
+            peerId: target.peerId,
+          });
         }
         break;
       }
@@ -153,9 +158,9 @@ export class SignalingServer {
   private onClose(client: Client): void {
     if (!this.clients.has(client.peerId)) return;
     this.clients.delete(client.peerId);
-    const group = this.lan.groupMembers(client.peerId).filter(
-      p => p !== client.peerId
-    );
+    const group = this.lan
+      .groupMembers(client.peerId)
+      .filter(p => p !== client.peerId);
     this.lan.remove(client.peerId);
     const left = this.rooms.leave(client.peerId);
     if (left) {
