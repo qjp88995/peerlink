@@ -17,7 +17,13 @@ export interface WriterCapabilities {
   fileSystemAccess: boolean;
 }
 
-export type WriterKind = 'fs-access' | 'zip' | 'blob';
+export type WriterDecision =
+  | { kind: 'fs-access' }
+  | { kind: 'blob' }
+  | { kind: 'unsupported'; reason: string };
+
+const UNSUPPORTED_REASON =
+  '当前浏览器不支持接收文件夹或多文件，请改用基于 Chromium 的浏览器（Chrome / Edge）。';
 
 /** 探测浏览器写入能力。 */
 export function detectCapabilities(
@@ -30,16 +36,15 @@ export function detectCapabilities(
   };
 }
 
-/** 根据能力与是否含目录，决定使用哪种写入器。 */
-export function chooseWriterKind(
+/** 仅依据接收端能力与文件构成决定落盘方式。 */
+export function decideWriter(
   caps: WriterCapabilities,
   opts: { fileCount: number; hasDirectory: boolean }
-): WriterKind {
-  if (caps.fileSystemAccess && (opts.hasDirectory || opts.fileCount > 1)) {
-    return 'fs-access';
-  }
-  if (opts.hasDirectory || opts.fileCount > 1) return 'zip';
-  return 'blob';
+): WriterDecision {
+  if (caps.fileSystemAccess) return { kind: 'fs-access' };
+  const multi = opts.hasDirectory || opts.fileCount > 1;
+  if (multi) return { kind: 'unsupported', reason: UNSUPPORTED_REASON };
+  return { kind: 'blob' };
 }
 
 export function manifestHasDirectory(files: FileEntry[]): boolean {
