@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildIceServers } from './ice-config';
+import { buildIceServers, iceServersFromEnv } from './ice-config';
 
 describe('buildIceServers', () => {
-  it('falls back to a default STUN when none provided', () => {
+  it('falls back to the default STUN list when none provided', () => {
     const servers = buildIceServers({});
     expect(servers).toHaveLength(1);
-    expect(servers[0].urls).toContain('stun:stun.l.google.com:19302');
+    expect(String(servers[0].urls)).toContain('stun:');
   });
 
   it('parses comma-separated STUN urls', () => {
@@ -31,6 +31,31 @@ describe('buildIceServers', () => {
 
   it('omits TURN when url is empty', () => {
     const servers = buildIceServers({ VITE_TURN_URL: '' });
+    expect(servers.every(s => String(s.urls).startsWith('stun'))).toBe(true);
+  });
+});
+
+describe('iceServersFromEnv runtime override', () => {
+  afterEach(() => {
+    delete window.__PEERLINK_ICE__;
+  });
+
+  it('prefers runtime window config over build-time defaults', () => {
+    window.__PEERLINK_ICE__ = {
+      stunUrls: 'stun:runtime:9',
+      turnUrl: 'turn:runtime:3478',
+      turnUsername: 'ru',
+      turnCredential: 'rp',
+    };
+    const servers = iceServersFromEnv();
+    expect(servers[0].urls).toEqual(['stun:runtime:9']);
+    expect(servers[1]).toMatchObject({ urls: 'turn:runtime:3478' });
+  });
+
+  it('treats empty runtime values as unset and falls back', () => {
+    window.__PEERLINK_ICE__ = { stunUrls: '', turnUrl: '' };
+    const servers = iceServersFromEnv();
+    expect(String(servers[0].urls)).toContain('stun:');
     expect(servers.every(s => String(s.urls).startsWith('stun'))).toBe(true);
   });
 });

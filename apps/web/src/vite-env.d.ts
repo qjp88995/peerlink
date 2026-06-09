@@ -11,3 +11,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  /** 运行时 ICE 配置，由 /ice-config.js 注入（生产经容器 entrypoint 按环境变量生成）。 */
+  __PEERLINK_ICE__?: import('@/lib/ice-config').RuntimeIceConfig;
+}

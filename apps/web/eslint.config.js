@@ -6,7 +6,7 @@ import { defineConfig } from 'eslint/config';
 import { baseConfig } from '../../eslint.config.base.mjs';
 
 export default defineConfig(
-  { ignores: ['dist', 'src/routeTree.gen.ts'] },
+  { ignores: ['dist', 'public', 'src/routeTree.gen.ts'] },
   ...baseConfig,
   {
     files: ['**/*.{ts,tsx}'],
