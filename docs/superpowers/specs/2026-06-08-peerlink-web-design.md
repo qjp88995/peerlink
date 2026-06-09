@@ -110,7 +110,17 @@ peerlink/
   - `http://localhost:${TRAEFIK_PORT}/signal`  → `signaling:PORT`（WebSocket，Traefik 自动处理 upgrade）
 - **Vite HMR 适配**：`web` 容器设 `RUNNING_IN_DOCKER=1` + `TRAEFIK_PORT`，HMR client 经 Traefik 端口回连（参照 smart-property `apps/user/vite.config.ts`）。
 - 无 db / redis（信令服务内存态），dev compose 仅 `deps` + `traefik` + `web` + `signaling` 四个服务。
-- `.env.example` 提供 `TRAEFIK_PORT`、ICE/STUN/TURN 配置等。
+- **端口避让**（宿主已有 docker 服务占用，必须避开）：
+
+  | 项目 | HTTP | Dashboard |
+  |------|------|-----------|
+  | smart-property | 8888 | 8889 |
+  | stock-trading | 8890 | 8891 |
+  | agent-x | 8892 | 8893 |
+  | **PeerLink（本项目）** | **8894** | **8895** |
+
+  默认值 `TRAEFIK_PORT=8894`、`TRAEFIK_DASHBOARD_PORT=8895`（均可在 `.env` 覆盖）。Docker 内部网络命名 `peerlink_internal`，与其它项目隔离。
+- `.env.example` 提供 `TRAEFIK_PORT=8894`、`TRAEFIK_DASHBOARD_PORT=8895`、ICE/STUN/TURN 配置等。
 
 > 线上 / 生产部署不在本 spec 范围（用户自有安排）。
 
