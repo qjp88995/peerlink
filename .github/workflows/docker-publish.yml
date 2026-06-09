@@ -100,6 +100,11 @@ jobs:
           context: .
           file: docker/Dockerfile.web
           push: true
+          build-args: |
+            VITE_STUN_URLS=${{ vars.VITE_STUN_URLS }}
+            VITE_TURN_URL=${{ vars.VITE_TURN_URL }}
+            VITE_TURN_USERNAME=${{ secrets.VITE_TURN_USERNAME }}
+            VITE_TURN_CREDENTIAL=${{ secrets.VITE_TURN_CREDENTIAL }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=web

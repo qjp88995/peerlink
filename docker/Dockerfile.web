@@ -18,6 +18,16 @@ WORKDIR /app
 COPY --from=deps /app ./
 COPY packages/protocol/ packages/protocol/
 COPY apps/web/ apps/web/
+# ICE 配置经构建期注入：VITE_* 会被 Vite 编译进静态产物（运行时改需重建镜像）。
+# 留空则回退到代码里的 DEFAULT_STUN；TURN 留空则仅用 STUN。
+ARG VITE_STUN_URLS
+ARG VITE_TURN_URL
+ARG VITE_TURN_USERNAME
+ARG VITE_TURN_CREDENTIAL
+ENV VITE_STUN_URLS=$VITE_STUN_URLS \
+    VITE_TURN_URL=$VITE_TURN_URL \
+    VITE_TURN_USERNAME=$VITE_TURN_USERNAME \
+    VITE_TURN_CREDENTIAL=$VITE_TURN_CREDENTIAL
 # web 无需预构建 protocol：vite 经 exports 的 import 条件直接打包其 TS 源码。
 RUN pnpm --filter @peerlink/web build
 
