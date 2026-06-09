@@ -3,6 +3,7 @@
 - **日期**:2026-06-08
 - **状态**:已通过设计评审，待写实现计划
 - **范围**:阶段一 = Web 版 P2P 文件传输。App / 微信小程序 / 自建 TURN 为后续独立 spec。
+- **开发模式**:对齐姊妹项目 `smart-property` 的工程范式（见第 2.5 节）。
 
 ---
 
@@ -41,13 +42,23 @@
 ```
 peerlink/
 ├── apps/
-│   ├── web/                  # React 19 + Vite + Tailwind v4 前端
-│   └── signaling/            # Node WebSocket 信令服务
+│   ├── web/                  # @peerlink/web — React 19 + Vite + Tailwind v4 前端
+│   └── signaling/            # @peerlink/signaling — 轻量 ws + zod + pino 信令服务
 ├── packages/
-│   └── protocol/             # 共享 TS 类型：信令消息 + 文件分片协议
-├── pnpm-workspace.yaml
+│   └── protocol/             # @peerlink/protocol — zod 定义的信令消息 + 文件分片协议
+├── docker/                   # Dockerfile(web / signaling)
+├── docker-compose.yml        # 本地一键起 web + signaling(+ Traefik 反代)
+├── .github/workflows/        # CI：lint / typecheck / test
+├── eslint.config.base.mjs    # 共享 ESLint 基础配置
+├── tsconfig.base.json        # 共享 TS 基础配置
+├── turbo.json
+├── pnpm-workspace.yaml       # 含 catalog: 集中版本声明
+├── .npmrc                    # registry = npmmirror 国内镜像
+├── .prettierrc / .husky/     # 格式化 + 提交钩子
 └── package.json
 ```
+
+包命名统一 `@peerlink/*`。`apps/web` 与 `apps/signaling` 均依赖 `@peerlink/protocol`（`workspace:*`）——协议层是两端唯一事实源。
 
 ### 2.2 运行时角色
 
@@ -68,7 +79,7 @@ peerlink/
 ### 2.3 设计原则
 
 1. **信令与传输彻底分离**。信令服务只做撮合（交换 SDP/ICE、局域网分组），**文件数据永不经过它**。信令服务保持轻量、低带宽、近无状态，便于后续 App / 小程序复用。
-2. **`packages/protocol` 是唯一事实源**。所有信令消息格式、文件分片帧格式定义于此，前端与信令服务共享同一套 TS 类型，避免两端协议漂移。
+2. **`packages/protocol` 是唯一事实源**。所有信令消息格式、文件分片帧格式以 **zod schema** 定义于此（沿用 smart-property `packages/shared` 的范式），前端与信令服务共享同一套类型与运行时校验，避免两端协议漂移。
 3. **客户端内部分层**（`apps/web` 内）：
    - `signaling-client` — WebSocket 连接与信令收发。
    - `peer-connection` — 封装 `RTCPeerConnection`、ICE、DataChannel 建立。
@@ -78,10 +89,39 @@ peerlink/
 
    每层职责单一、接口清晰、可独立测试。后续 App 可替换 `storage` / `ui`，复用 `protocol`、`transfer`、`peer-connection`、`signaling-client`。
 
+客户端各层选型（对齐 smart-property `apps/user`）：
+
+- `signaling-client` — 基于浏览器原生 `WebSocket`，消息走 `@peerlink/protocol` 的 zod 校验。
+- `peer-connection` — 封装 `RTCPeerConnection`，ICE 服务器配置可注入（可插拔 TURN）。
+- `transfer` — 纯逻辑，依赖注入的 channel 抽象，便于单测。
+- `storage` — 接收端写入抽象，多实现按浏览器能力探测选择。
+- `ui` — React 19 + Tailwind v4 + TanStack Router（文件式路由）+ zustand（连接/传输状态）+ sonner（提示）+ lucide-react（图标），`lib/cn.ts` 统一 className 合并。
+
 ### 2.4 部署形态
 
 - `apps/web`：纯静态站点，可部署到 Vercel 或任意静态托管。
 - `apps/signaling`：常驻 Node 进程，小实例即可。
+- 本地与自托管走 **Docker Compose**（沿用 smart-property 的 Traefik 反代模式）：`docker/` 放两个 Dockerfile，`docker-compose.yml` 一键起 `web` + `signaling`，`.env.example` 提供 ICE/TURN、端口等配置。
+
+### 2.5 工程约定（对齐 smart-property 开发模式）
+
+| 维度 | 约定 |
+|------|------|
+| 包管理 | **pnpm@10** workspace（`apps/*` + `packages/*`），Node ≥ 22，全 ESM（`"type": "module"`） |
+| 任务编排 | **Turborepo**：`build` / `dev` / `lint` / `typecheck` / `test`；`dev`/`build` 依赖 `^build`（protocol 先构建） |
+| 版本管理 | pnpm **`catalog:`** 在根 `pnpm-workspace.yaml` 集中声明，各包引用 `catalog:` |
+| 镜像源 | `.npmrc` → `registry = https://registry.npmmirror.com/` |
+| 命名 | 包名 `@peerlink/*`；跨包引用用 `workspace:*` |
+| Lint | ESLint flat config：根 `eslint.config.base.mjs`（`@typescript-eslint/no-explicit-any: error` + `simple-import-sort`），各包 extends 并加框架插件与 import 分组 |
+| 格式化 | Prettier：`singleQuote`、`semi`、`tabWidth 2`、`trailingComma: es5`、`printWidth 80`、`arrowParens: avoid` |
+| 提交钩子 | **Husky + lint-staged**：提交前 `prettier --write` + 对应包的 `eslint --fix` |
+| TS 配置 | 根 `tsconfig.base.json`：`strict`、`target ES2022`、`module ESNext`、`moduleResolution bundler` |
+| 测试 | **Vitest**，`*.spec.ts` 与源码**同目录共置**；E2E 用 Playwright（见第 6 节） |
+| 校验 | 运行时数据校验统一用 **zod** |
+| 日志 | 信令服务用 **pino**（结构化日志） |
+| CI | `.github/workflows/`：`lint` / `typecheck` / `test` |
+
+`packages/protocol` 沿用 `@smart-property/shared` 的导出范式：`exports` 中 `types`/`import` 指向 `src/index.ts`，`build` 用 `tsc` 产出 `dist`，单测 `.spec.ts` 共置。
 
 ---
 
@@ -245,7 +285,7 @@ DataChannel 上两类帧，用首字节区分：
 
 ## 6. 测试策略
 
-WebRTC/浏览器 API 难纯单元测试，故分层：纯逻辑尽量纯测，浏览器/网络相关用集成 + E2E。
+WebRTC/浏览器 API 难纯单元测试，故分层：纯逻辑尽量纯测，浏览器/网络相关用集成 + E2E。单测统一用 **Vitest**，`*.spec.ts` 与被测源码**同目录共置**（对齐 smart-property）；`turbo test` 统一驱动。
 
 ### 6.1 `packages/protocol` — 单元测试（TDD，覆盖最高）
 
