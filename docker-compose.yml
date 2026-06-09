@@ -46,6 +46,30 @@ services:
     # 宿主端口映射在 docker-compose.override.yml。
 
   # ─── 计划 2 加入 signaling 服务 ───
+  signaling:
+    <<: *app-build
+    restart: unless-stopped
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: development
+      SIGNALING_PORT: 3001
+      SIGNALING_PATH: /signal
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    command: pnpm --filter @peerlink/signaling dev
+    volumes:
+      - ./:/workspace
+    networks:
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=peerlink_internal
+      - traefik.http.routers.pl-signal.rule=PathPrefix(`/signal`)
+      - traefik.http.routers.pl-signal.entrypoints=web
+      - traefik.http.routers.pl-signal.priority=10
+      - traefik.http.services.pl-signal.loadbalancer.server.port=3001
+
   # ─── 计划 3 加入 web 服务 ───
 
 networks:
