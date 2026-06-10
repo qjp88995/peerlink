@@ -327,9 +327,20 @@ export function startConversation(
           state === 'closed'
         ) {
           conv.closeRemote();
+          teardown();
         }
       },
     });
+  }
+
+  // 释放底层资源（ws + RTCPeerConnection）。幂等：断开自动触发一次，
+  // 用户手动移除会话再调一次也安全。
+  let torndown = false;
+  function teardown() {
+    if (torndown) return;
+    torndown = true;
+    peer?.close();
+    sig.close();
   }
 
   sig.on('error', (_c, m) => {
@@ -376,9 +387,6 @@ export function startConversation(
     sendFiles: f => conv.sendFiles(f),
     acceptTransfer: t => conv.acceptTransfer(t),
     rejectTransfer: t => conv.rejectTransfer(t),
-    close: () => {
-      peer?.close();
-      sig.close();
-    },
+    close: teardown,
   };
 }
