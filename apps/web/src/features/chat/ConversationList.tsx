@@ -30,7 +30,7 @@ function parseRoomId(value: string): string | null {
   return trimmed;
 }
 
-export function ConversationList() {
+export function ConversationList({ className }: { className?: string }) {
   const sessions = useRoomsStore(s => s.sessions);
   const order = useRoomsStore(s => s.order);
   const activeId = useRoomsStore(s => s.activeId);
@@ -44,7 +44,12 @@ export function ConversationList() {
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-surface">
+    <aside
+      className={cn(
+        'flex h-full w-full shrink-0 flex-col border-r border-line bg-surface md:w-72',
+        className
+      )}
+    >
       <div className="flex items-center justify-between px-4 py-3">
         <span className="font-display text-lg font-extrabold tracking-tight">
           Peer<span className="text-signal">Link</span>
