@@ -21,13 +21,18 @@ export interface SourceFile {
 
 export interface ManifestMessage {
   type: 'manifest';
+  transferId: string;
   files: FileEntry[];
   totalSize: number;
 }
 
-export function buildManifest(files: SourceFile[]): ManifestMessage {
+export function buildManifest(
+  files: SourceFile[],
+  transferId: string
+): ManifestMessage {
   return {
     type: 'manifest',
+    transferId,
     totalSize: files.reduce((sum, f) => sum + f.size, 0),
     files: files.map(f => ({
       fileId: f.fileId,
@@ -54,6 +59,7 @@ export function browserFileToSource(file: File, fileId: number): SourceFile {
 }
 
 export interface TransferSenderOptions {
+  transferId: string;
   chunkSize?: number;
   highWater?: number;
   lowWater?: number;
@@ -61,6 +67,7 @@ export interface TransferSenderOptions {
 }
 
 export class TransferSender {
+  private transferId: string;
   private chunkSize: number;
   private highWater: number;
   private lowWater: number;
@@ -70,8 +77,9 @@ export class TransferSender {
   constructor(
     private channel: SendChannel,
     private files: SourceFile[],
-    opts: TransferSenderOptions = {}
+    opts: TransferSenderOptions
   ) {
+    this.transferId = opts.transferId;
     this.chunkSize = opts.chunkSize ?? DEFAULT_CHUNK_SIZE;
     this.highWater = opts.highWater ?? BUFFER_HIGH_WATERMARK;
     this.lowWater = opts.lowWater ?? BUFFER_LOW_WATERMARK;
@@ -104,6 +112,11 @@ export class TransferSender {
         })
       );
     }
-    this.channel.send(encodeControlFrame({ type: 'transfer-complete' }));
+    this.channel.send(
+      encodeControlFrame({
+        type: 'transfer-complete',
+        transferId: this.transferId,
+      })
+    );
   }
 }

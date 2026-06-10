@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-import { ReceivePanel } from '@/features/receive/ReceivePanel';
+import { ChatRoom } from '@/features/chat/ChatRoom';
 
 export const Route = createFileRoute('/r/$roomId')({
-  component: function ReceiveRoute() {
+  component: function JoinRoute() {
     const { roomId } = Route.useParams();
-    return <ReceivePanel roomId={decodeURIComponent(roomId)} />;
+    return <ChatRoom mode="join" roomId={decodeURIComponent(roomId)} />;
   },
 });

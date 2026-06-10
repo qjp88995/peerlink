@@ -23,6 +23,10 @@ export interface TransferReceiverOptions {
 export class TransferReceiver {
   private crcs = new Map<number, Crc32>();
   private received = 0;
+  // 帧可能被并发派发（wiring 的 void conv.handleIncoming）。用 promise 链把
+  // 各操作严格串行化，保证 closeFile/finish 一定在所有 writeChunk 落定之后执行，
+  // 否则在 write() 挂起时 close() 会导致 FS Access 交换文件无法提交。
+  private chain: Promise<void> = Promise.resolve();
 
   constructor(
     private manifest: ReceiverManifest,
@@ -30,7 +34,12 @@ export class TransferReceiver {
     private opts: TransferReceiverOptions
   ) {}
 
-  async handleFrame(bytes: Uint8Array): Promise<void> {
+  handleFrame(bytes: Uint8Array): Promise<void> {
+    this.chain = this.chain.then(() => this.process(bytes));
+    return this.chain;
+  }
+
+  private async process(bytes: Uint8Array): Promise<void> {
     const frame = decodeFrame(bytes);
     if (frame.kind === 'data') {
       await this.writer.writeChunk(frame.fileId, frame.payload);

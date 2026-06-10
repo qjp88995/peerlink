@@ -28,12 +28,13 @@ class RecordingChannel implements SendChannel {
 }
 
 describe('buildManifest', () => {
-  it('sums total size and lists entries', () => {
-    const m = buildManifest([
-      memSource(0, 'a.txt', [1, 2, 3]),
-      memSource(1, 'dir/b.txt', [4, 5]),
-    ]);
+  it('includes transferId, sums total size and lists entries', () => {
+    const m = buildManifest(
+      [memSource(0, 'a.txt', [1, 2, 3]), memSource(1, 'dir/b.txt', [4, 5])],
+      't1'
+    );
     expect(m.type).toBe('manifest');
+    expect(m.transferId).toBe('t1');
     expect(m.totalSize).toBe(5);
     expect(m.files[1]).toEqual({
       fileId: 1,
@@ -45,24 +46,32 @@ describe('buildManifest', () => {
 });
 
 describe('TransferSender', () => {
-  it('emits data chunks then file-complete then transfer-complete', async () => {
+  it('emits data chunks then file-complete then transfer-complete with transferId', async () => {
     const ch = new RecordingChannel();
     const files = [memSource(0, 'a.bin', [10, 20, 30, 40, 50])];
-    const sender = new TransferSender(ch, files, { chunkSize: 2 });
+    const sender = new TransferSender(ch, files, {
+      transferId: 't1',
+      chunkSize: 2,
+    });
     await sender.streamAll();
 
     const decoded = ch.frames.map(decodeFrame);
     const dataFrames = decoded.filter(f => f.kind === 'data');
-    // 5 字节、块大小 2 → 3 个数据块
     expect(dataFrames).toHaveLength(3);
 
     const controls = decoded.filter(f => f.kind === 'control');
-    const types = controls.map(c =>
-      c.kind === 'control' ? (c.message as { type: string }).type : ''
+    const msgs = controls.map(c =>
+      c.kind === 'control' ? (c.message as { type: string }) : { type: '' }
     );
-    expect(types).toEqual(['file-complete', 'transfer-complete']);
+    expect(msgs.map(m => m.type)).toEqual([
+      'file-complete',
+      'transfer-complete',
+    ]);
+    expect(msgs[1]).toMatchObject({
+      type: 'transfer-complete',
+      transferId: 't1',
+    });
 
-    // 重组数据应等于源
     const payload = dataFrames.flatMap(f =>
       f.kind === 'data' ? Array.from(f.payload) : []
     );
@@ -74,6 +83,7 @@ describe('TransferSender', () => {
     const files = [memSource(0, 'a.bin', [1, 2, 3, 4])];
     const seen: number[] = [];
     const sender = new TransferSender(ch, files, {
+      transferId: 't1',
       chunkSize: 2,
       onProgress: sent => seen.push(sent),
     });
@@ -95,6 +105,7 @@ describe('TransferSender', () => {
     };
     const files = [memSource(0, 'a.bin', [1, 2, 3, 4, 5, 6])];
     const sender = new TransferSender(ch, files, {
+      transferId: 't1',
       chunkSize: 2,
       highWater: 1000,
       lowWater: 500,
