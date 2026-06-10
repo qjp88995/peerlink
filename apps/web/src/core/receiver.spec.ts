@@ -69,6 +69,37 @@ describe('TransferReceiver', () => {
     expect(results).toEqual([false]);
   });
 
+  it('serializes operations: closeFile waits for an in-flight writeChunk', async () => {
+    // 模拟 wiring 的并发派发（void conv.handleIncoming），不 await 第一帧。
+    const events: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(res => {
+      release = res;
+    });
+    const writer: Writer = {
+      async writeChunk() {
+        events.push('write:start');
+        await gate;
+        events.push('write:end');
+      },
+      closeFile() {
+        events.push('close');
+      },
+      finish: vi.fn(),
+      abort: vi.fn(),
+    };
+    const r = new TransferReceiver(manifest, writer, {});
+    const p1 = r.handleFrame(
+      encodeDataFrame(0, 0, new Uint8Array([1, 2, 3, 4, 5]))
+    );
+    const p2 = r.handleFrame(
+      encodeControlFrame({ type: 'file-complete', fileId: 0, crc32: 0 })
+    );
+    release();
+    await Promise.all([p1, p2]);
+    expect(events).toEqual(['write:start', 'write:end', 'close']);
+  });
+
   it('aborts the writer on cancel', async () => {
     const { writer } = mockWriter();
     const r = new TransferReceiver(manifest, writer, {});
