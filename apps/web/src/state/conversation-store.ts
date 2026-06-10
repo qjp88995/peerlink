@@ -135,7 +135,8 @@ export const useRoomsStore = create<RoomsState>(set => ({
             ts: item.ts,
           },
         ],
-        unread: id === state.activeId ? s.unread : s.unread + 1,
+        unread:
+          item.dir === 'out' || id === state.activeId ? s.unread : s.unread + 1,
       }))
     ),
 

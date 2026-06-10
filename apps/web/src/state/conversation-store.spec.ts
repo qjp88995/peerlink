@@ -41,6 +41,13 @@ describe('rooms store', () => {
     expect(s().sessions.B.unread).toBe(0);
   });
 
+  it('never increments unread for outgoing messages', () => {
+    s().addSession('A', null);
+    s().addSession('B', null); // B is active, A is in the background
+    s().appendText('A', { id: 'm1', dir: 'out', text: 'sent to A', ts: 1 });
+    expect(s().sessions.A.unread).toBe(0);
+  });
+
   it('clears unread on setActive', () => {
     s().addSession('A', null);
     s().addSession('B', null);
