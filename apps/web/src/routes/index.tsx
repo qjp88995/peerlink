@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-import { SendPanel } from '@/features/send/SendPanel';
+import { ChatRoom } from '@/features/chat/ChatRoom';
 
 export const Route = createFileRoute('/')({
-  component: SendPanel,
+  component: () => <ChatRoom mode="create" />,
 });
