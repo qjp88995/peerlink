@@ -1,0 +1,152 @@
+import type { FileEntry } from '@peerlink/protocol';
+
+import {
+  type Connection,
+  type ConversationCallbacks,
+  type ConversationHandle,
+  startConversation as defaultStart,
+  type TextItem,
+} from './conversation';
+
+export interface SessionStore {
+  addSession(id: string, roomId: string | null): void;
+  removeSession(id: string): void;
+  setActive(id: string): void;
+  setRoom(id: string, roomId: string): void;
+  setConnection(id: string, connection: Connection): void;
+  appendText(id: string, item: TextItem): void;
+  appendIncomingFiles(
+    id: string,
+    transferId: string,
+    files: FileEntry[],
+    totalSize: number
+  ): void;
+  appendOutgoingFiles(
+    id: string,
+    transferId: string,
+    files: FileEntry[],
+    totalSize: number
+  ): void;
+  updateFileStatus(
+    id: string,
+    transferId: string,
+    status: 'transferring' | 'done' | 'failed' | 'rejected'
+  ): void;
+  updateFileProgress(id: string, transferId: string, sent: number): void;
+}
+
+export interface SessionManagerDeps {
+  store: SessionStore;
+  start?: typeof defaultStart;
+  genId?: () => string;
+  onConnectionChange?: (id: string, state: Connection) => void;
+}
+
+/** 并行持有多个 P2P 会话，把每条会话的回调路由到 store。 */
+export class SessionManager {
+  private handles = new Map<string, ConversationHandle>();
+  private rooms = new Map<string, string>();
+  private store: SessionStore;
+  private start: typeof defaultStart;
+  private genId: () => string;
+  private onConnectionChange?: (id: string, state: Connection) => void;
+
+  constructor(deps: SessionManagerDeps) {
+    this.store = deps.store;
+    this.start = deps.start ?? defaultStart;
+    this.genId = deps.genId ?? (() => crypto.randomUUID());
+    this.onConnectionChange = deps.onConnectionChange;
+  }
+
+  create(): string {
+    const id = this.genId();
+    this.store.addSession(id, null);
+    this.handles.set(id, this.start({ mode: 'create' }, this.callbacks(id)));
+    return id;
+  }
+
+  join(roomId: string): string {
+    for (const [id, room] of this.rooms) {
+      if (room === roomId && this.handles.has(id)) {
+        this.store.setActive(id);
+        return id;
+      }
+    }
+    const id = this.genId();
+    this.rooms.set(id, roomId);
+    this.store.addSession(id, roomId);
+    this.handles.set(
+      id,
+      this.start({ mode: 'join', roomId }, this.callbacks(id))
+    );
+    return id;
+  }
+
+  remove(id: string): void {
+    this.handles.get(id)?.close();
+    this.handles.delete(id);
+    this.rooms.delete(id);
+    this.store.removeSession(id);
+  }
+
+  sendText(id: string, text: string): void {
+    const handle = this.handles.get(id);
+    if (!handle) return;
+    this.store.appendText(id, handle.sendText(text));
+  }
+
+  sendFiles(id: string, files: File[]): void {
+    const handle = this.handles.get(id);
+    if (!handle) return;
+    const out = handle.sendFiles(files);
+    this.store.appendOutgoingFiles(
+      id,
+      out.transferId,
+      out.entries,
+      out.totalSize
+    );
+  }
+
+  acceptTransfer(id: string, transferId: string): void {
+    void this.handles.get(id)?.acceptTransfer(transferId);
+  }
+
+  rejectTransfer(id: string, transferId: string): void {
+    const handle = this.handles.get(id);
+    if (!handle) return;
+    handle.rejectTransfer(transferId);
+    this.store.updateFileStatus(id, transferId, 'rejected');
+  }
+
+  closeAll(): void {
+    for (const handle of this.handles.values()) handle.close();
+    this.handles.clear();
+    this.rooms.clear();
+  }
+
+  private callbacks(id: string): ConversationCallbacks {
+    return {
+      onRoom: roomId => {
+        this.rooms.set(id, roomId);
+        this.store.setRoom(id, roomId);
+      },
+      onConnection: state => {
+        this.store.setConnection(id, state);
+        this.onConnectionChange?.(id, state);
+      },
+      onText: item => this.store.appendText(id, item),
+      onIncomingFiles: (transferId, files, total) =>
+        this.store.appendIncomingFiles(id, transferId, files, total),
+      onTransferStart: transferId =>
+        this.store.updateFileStatus(id, transferId, 'transferring'),
+      onProgress: (transferId, sent) =>
+        this.store.updateFileProgress(id, transferId, sent),
+      onTransferDone: transferId =>
+        this.store.updateFileStatus(id, transferId, 'done'),
+      onTransferFailed: transferId =>
+        this.store.updateFileStatus(id, transferId, 'failed'),
+      onTransferRejected: transferId =>
+        this.store.updateFileStatus(id, transferId, 'rejected'),
+    };
+  }
+}
