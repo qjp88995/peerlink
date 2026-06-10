@@ -48,7 +48,8 @@ export interface SessionCallbacks {
 export function startSendSession(files: File[], cb: SessionCallbacks) {
   const sig = new SignalingClient(signalUrl());
   const sources = files.map((f, i) => browserFileToSource(f, i));
-  const manifest = buildManifest(sources);
+  const transferId = crypto.randomUUID();
+  const manifest = buildManifest(sources, transferId);
   let peer: PeerConnection | undefined;
   let targetPeerId: string | undefined;
 
@@ -83,7 +84,7 @@ export function startSendSession(files: File[], cb: SessionCallbacks) {
           const sender = new TransferSender(
             rtcSendChannel(peer.channel),
             sources,
-            { onProgress: throttleProgress(cb.onProgress) }
+            { transferId, onProgress: throttleProgress(cb.onProgress) }
           );
           await sender.streamAll();
           cb.onPhase('done');
