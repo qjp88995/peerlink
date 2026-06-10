@@ -4,15 +4,15 @@
 
 ## 项目概述
 
-PeerLink：基于 WebRTC DataChannel 的 P2P 文件传输系统（Web 版）。信令与传输彻底分离——文件数据 P2P 直传，**永不经过信令服务**。`packages/protocol` 是协议唯一事实源（zod schema + CRC32），前后端共享。
+PeerLink：基于 WebRTC DataChannel 的 P2P 即时通讯 + 文件传输系统（Web 版）。两端进入同一房间后，于**统一时间线**里互发文字消息与文件（对称 IM，文件保留 accept/reject 确认，纯会话内存阅后即焚）。信令与传输彻底分离——文字与文件数据全部 P2P 直传，**永不经过信令服务**。`packages/protocol` 是协议唯一事实源（zod schema + CRC32），前后端共享。
 
 ## Monorepo
 
 pnpm@10 workspace（`apps/*` + `packages/*`），Node ≥22，全 ESM，Turborepo 编排。
 
-- `packages/protocol`（`@peerlink/protocol`）— 信令消息 + 分片帧 + CRC32，纯逻辑，被另两端依赖。
+- `packages/protocol`（`@peerlink/protocol`）— 信令消息 + 控制帧（含 `chat` 文字消息、文件控制消息带 `transferId`）+ 分片帧 + CRC32，纯逻辑，被另两端依赖。
 - `apps/signaling`（`@peerlink/signaling`）— 轻量 `ws` + zod + pino 信令服务，**全内存无数据库**。
-- `apps/web`（`@peerlink/web`）— React 19 + Vite + Tailwind v4 前端，内部分 `core/`（signaling-client/peer-connection/sender/receiver/storage）、`state/`、`features/`、`routes/`。
+- `apps/web`（`@peerlink/web`）— React 19 + Vite + Tailwind v4 前端，内部分 `core/`（signaling-client/peer-connection/**conversation**/sender/receiver/storage）、`state/`、`features/`（chat 时间线 UI）、`routes/`。`conversation.ts` 是对称编排器：一条 DataChannel 上多路复用「多次文件传输 + 文字消息」（按 `transferId`/`fileId` 路由）。
 
 跨包引用用 `workspace:*`。改协议（`packages/protocol`）会同时影响两端，务必同步。
 
