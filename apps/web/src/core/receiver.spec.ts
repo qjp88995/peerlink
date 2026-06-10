@@ -46,7 +46,9 @@ describe('TransferReceiver', () => {
         crc32: crc32(bytes),
       })
     );
-    await r.handleFrame(encodeControlFrame({ type: 'transfer-complete' }));
+    await r.handleFrame(
+      encodeControlFrame({ type: 'transfer-complete', transferId: 't1' })
+    );
 
     expect(data.get(0)).toEqual([10, 20, 30, 40, 50]);
     expect(results).toEqual([{ fileId: 0, ok: true }]);
@@ -70,7 +72,9 @@ describe('TransferReceiver', () => {
   it('aborts the writer on cancel', async () => {
     const { writer } = mockWriter();
     const r = new TransferReceiver(manifest, writer, {});
-    await r.handleFrame(encodeControlFrame({ type: 'cancel', reason: 'x' }));
+    await r.handleFrame(
+      encodeControlFrame({ type: 'cancel', transferId: 't1', reason: 'x' })
+    );
     expect(writer.abort).toHaveBeenCalled();
   });
 });
