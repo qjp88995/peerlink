@@ -13,6 +13,8 @@ export function statusHint(connection: Connection): string {
       return '连接中…';
     case 'connected':
       return '已连接';
+    case 'reconnecting':
+      return '重连中…';
     case 'closed':
       return '已断开';
     case 'error':

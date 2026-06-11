@@ -26,11 +26,15 @@ import {
   type Writer,
 } from './storage/writer';
 
+/** disconnected 自愈宽限期：超时仍未恢复才关闭会话。 */
+const GRACE_MS = 15_000;
+
 export type Connection =
   | 'idle'
   | 'waiting'
   | 'connecting'
   | 'connected'
+  | 'reconnecting'
   | 'closed'
   | 'error';
 
@@ -311,6 +315,14 @@ export function startConversation(
     targetPeerId &&
     sig.signal(targetPeerId, payload as Record<string, unknown>);
 
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  function clearGraceTimer() {
+    if (graceTimer !== undefined) {
+      clearTimeout(graceTimer);
+      graceTimer = undefined;
+    }
+  }
+
   function buildPeer(onSignal: (p: object) => void) {
     return new PeerConnection({
       iceServers: iceServersFromEnv(),
@@ -321,11 +333,28 @@ export function startConversation(
       },
       onMessage: bytes => void conv.handleIncoming(bytes),
       onStateChange: state => {
-        if (
-          state === 'failed' ||
-          state === 'disconnected' ||
-          state === 'closed'
-        ) {
+        // connected/completed：仅当处于宽限期时视为自愈成功，恢复 UI。
+        if (state === 'connected' || state === 'completed') {
+          if (graceTimer !== undefined) {
+            clearGraceTimer();
+            callbacks.onConnection?.('connected');
+          }
+          return;
+        }
+        // disconnected：非终态，给宽限期等待自愈，不立即 teardown。
+        if (state === 'disconnected') {
+          if (torndown || graceTimer !== undefined) return;
+          callbacks.onConnection?.('reconnecting');
+          graceTimer = setTimeout(() => {
+            graceTimer = undefined;
+            conv.closeRemote();
+            teardown();
+          }, GRACE_MS);
+          return;
+        }
+        // failed/closed：终态，立即关闭。
+        if (state === 'failed' || state === 'closed') {
+          clearGraceTimer();
           conv.closeRemote();
           teardown();
         }
@@ -339,6 +368,7 @@ export function startConversation(
   function teardown() {
     if (torndown) return;
     torndown = true;
+    clearGraceTimer();
     peer?.close();
     sig.close();
   }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // 验证 startConversation 的资源释放接线：对端断开时自动关闭 ws + RTCPeerConnection，
 // 且与用户手动 close() 之间幂等（只关一次）。SignalingClient / PeerConnection 被 mock
@@ -109,5 +109,63 @@ describe('startConversation teardown', () => {
     handle.close();
     expect(peer.closeCount).toBe(1);
     expect(sig.closeCount).toBe(1);
+  });
+});
+
+describe('startConversation reconnecting grace period', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function bootPeer() {
+    const cb = makeCallbacks();
+    const handle = startConversation({ mode: 'create' }, cb);
+    const sig = mocks.sigs.at(-1)!;
+    sig.emit('open');
+    sig.emit('peer-joined', 'peer-x'); // synchronously builds the peer
+    const peer = mocks.peers.at(-1)!;
+    return { cb, handle, sig, peer };
+  }
+
+  it('enters reconnecting on disconnected without tearing down', () => {
+    const { cb, sig, peer } = bootPeer();
+    peer.opts.onStateChange('disconnected');
+    expect(cb.onConnection).toHaveBeenLastCalledWith('reconnecting');
+    expect(peer.closeCount).toBe(0);
+    expect(sig.closeCount).toBe(0);
+  });
+
+  it('restores to connected when ICE recovers within the grace window', () => {
+    const { cb, sig, peer } = bootPeer();
+    peer.opts.onStateChange('disconnected');
+    peer.opts.onStateChange('connected');
+    expect(cb.onConnection).toHaveBeenLastCalledWith('connected');
+    vi.advanceTimersByTime(20_000);
+    expect(peer.closeCount).toBe(0);
+    expect(sig.closeCount).toBe(0);
+  });
+
+  it('tears down when the grace window expires while still disconnected', () => {
+    const { sig, peer } = bootPeer();
+    peer.opts.onStateChange('disconnected');
+    vi.advanceTimersByTime(15_000);
+    expect(peer.closeCount).toBe(1);
+    expect(sig.closeCount).toBe(1);
+  });
+
+  it('tears down immediately on failed without waiting for the grace window', () => {
+    const { sig, peer } = bootPeer();
+    peer.opts.onStateChange('disconnected');
+    peer.opts.onStateChange('failed');
+    expect(peer.closeCount).toBe(1);
+    expect(sig.closeCount).toBe(1);
+  });
+
+  it('clears the grace timer on close() so it does not tear down twice', () => {
+    const { handle, peer } = bootPeer();
+    peer.opts.onStateChange('disconnected');
+    handle.close();
+    expect(peer.closeCount).toBe(1);
+    vi.advanceTimersByTime(20_000);
+    expect(peer.closeCount).toBe(1); // timer cleared, no second teardown
   });
 });
