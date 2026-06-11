@@ -77,6 +77,11 @@ export function ConversationView({ className }: { className?: string }) {
       className={cn('flex h-full flex-1 flex-col overflow-hidden', className)}
     >
       <MobileHeader session={session} />
+      {session.connection === 'reconnecting' && (
+        <div className="border-b border-line bg-signal/10 px-4 py-1.5 text-center text-xs text-fg-muted">
+          网络波动，重连中…
+        </div>
+      )}
       <Timeline
         items={session.items}
         onAccept={id => sessionManager.acceptTransfer(activeId, id)}
