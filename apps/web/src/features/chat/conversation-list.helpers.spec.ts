@@ -5,6 +5,7 @@ import type { Session } from '@/state/conversation-store';
 import {
   lastPreview,
   sessionName,
+  statusHint,
   statusTone,
 } from './conversation-list.helpers';
 
@@ -69,5 +70,10 @@ describe('conversation-list helpers', () => {
     expect(statusTone('connecting')).toBe('pending');
     expect(statusTone('closed')).toBe('dead');
     expect(statusTone('error')).toBe('dead');
+    expect(statusTone('reconnecting')).toBe('pending');
+  });
+
+  it('maps connection to a status hint', () => {
+    expect(statusHint('reconnecting')).toBe('重连中…');
   });
 });
