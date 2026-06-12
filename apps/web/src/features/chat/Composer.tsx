@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 
-import { Folder, Keyboard, Mic, Paperclip, Send, X } from 'lucide-react';
+import { Folder, Keyboard, Mic, Paperclip, Plus, Send, X } from 'lucide-react';
 
 import { Button } from '@/features/common/ui';
 
@@ -33,8 +33,10 @@ export function Composer({
     typeof matchMedia !== 'undefined' &&
     matchMedia('(pointer: coarse)').matches;
 
-  // 手机端：文字 / 语音互斥模式切换。桌面端不用模式，麦克风作为空输入时的发送位按钮。
+  // 手机端：文字 / 语音互斥模式切换 + 媒体收进右侧「＋」面板。
+  // 桌面端不用模式，文件/文件夹按钮内联，麦克风作为空输入时的发送位按钮。
   const [voiceMode, setVoiceMode] = useState(false);
+  const [showPlus, setShowPlus] = useState(false);
   const coarseVoice = coarse && voiceMode;
   const showDesktopMic = !coarse && supported && text.trim().length === 0;
 
@@ -60,6 +62,16 @@ export function Composer({
     const files = Array.from(e.target.files ?? []);
     if (files.length) onSendFiles(files);
     e.target.value = '';
+  }
+
+  function openFile() {
+    fileInputRef.current?.click();
+    setShowPlus(false);
+  }
+
+  function openFolder() {
+    folderInputRef.current?.click();
+    setShowPlus(false);
   }
 
   function onHoldPointerDown(e: PointerEvent<HTMLButtonElement>) {
@@ -108,8 +120,8 @@ export function Composer({
     );
   }
 
-  return (
-    <div className="flex items-end gap-2 border-t border-line bg-surface px-3 py-3">
+  const hiddenInputs = (
+    <>
       <input
         ref={fileInputRef}
         type="file"
@@ -129,29 +141,130 @@ export function Composer({
         data-testid="folder-input"
         className="hidden"
       />
+    </>
+  );
 
-      {coarse && supported && (
-        <Button
-          variant="ghost"
-          disabled={disabled}
-          aria-label={voiceMode ? '切换到文字' : '切换到语音'}
-          onClick={() => {
-            if (recording) return;
-            setVoiceMode(v => !v);
-          }}
-        >
-          {voiceMode ? (
-            <Keyboard className="size-4" />
-          ) : (
-            <Mic className="size-4" />
-          )}
-        </Button>
+  const middle = coarseVoice ? (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label="按住录音"
+      className="flex h-10 min-h-10 flex-1 touch-none select-none items-center justify-center gap-2 rounded-xl border border-line bg-surface-2/60 text-sm text-fg-muted disabled:opacity-50"
+      onContextMenu={e => e.preventDefault()}
+      onPointerDown={onHoldPointerDown}
+      onPointerMove={onHoldPointerMove}
+      onPointerUp={onHoldPointerUp}
+      onPointerCancel={onHoldPointerUp}
+    >
+      {recording ? (
+        <>
+          <span className="size-2 animate-pulse rounded-full bg-danger" />
+          <span className={cancelArmed ? 'text-danger' : undefined}>
+            {cancelArmed ? '松开取消' : '松开发送 · 上滑取消'}
+          </span>
+        </>
+      ) : (
+        '按住 说话'
       )}
+    </button>
+  ) : (
+    <textarea
+      value={text}
+      onChange={e => setText(e.target.value)}
+      onKeyDown={onKeyDown}
+      disabled={disabled}
+      maxLength={8192}
+      rows={1}
+      placeholder={disabled ? '等待连接…' : '输入消息，Enter 发送'}
+      data-testid="composer-input"
+      className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border border-line bg-surface-2/60 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint disabled:opacity-50"
+    />
+  );
 
+  // 手机端布局：[语音切换][输入框 / 按住说话][发送 或 ＋]，媒体在 ＋ 面板里。
+  if (coarse) {
+    return (
+      <div className="border-t border-line bg-surface">
+        {showPlus && (
+          <div className="grid grid-cols-4 gap-x-3 gap-y-4 px-3 pb-1 pt-3">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={openFile}
+              aria-label="发送文件"
+              className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+            >
+              <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
+                <Paperclip className="size-6" />
+              </span>
+              <span className="text-xs text-fg-muted">文件</span>
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={openFolder}
+              aria-label="发送文件夹"
+              className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+            >
+              <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
+                <Folder className="size-6" />
+              </span>
+              <span className="text-xs text-fg-muted">文件夹</span>
+            </button>
+          </div>
+        )}
+        <div className="flex items-end gap-2 px-3 py-3">
+          {hiddenInputs}
+          {supported && (
+            <Button
+              variant="ghost"
+              disabled={disabled}
+              aria-label={voiceMode ? '切换到文字' : '切换到语音'}
+              onClick={() => {
+                if (recording) return;
+                setShowPlus(false);
+                setVoiceMode(v => !v);
+              }}
+            >
+              {voiceMode ? (
+                <Keyboard className="size-4" />
+              ) : (
+                <Mic className="size-4" />
+              )}
+            </Button>
+          )}
+          {middle}
+          {text.trim().length > 0 && !coarseVoice ? (
+            <Button disabled={disabled} onClick={submit} aria-label="发送">
+              <Send className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              disabled={disabled}
+              aria-label={showPlus ? '收起' : '更多'}
+              onClick={() => setShowPlus(v => !v)}
+            >
+              {showPlus ? (
+                <X className="size-4" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 桌面端布局：文件/文件夹内联，空输入时显示麦克风，有文字时显示发送。
+  return (
+    <div className="flex items-end gap-2 border-t border-line bg-surface px-3 py-3">
+      {hiddenInputs}
       <Button
         variant="ghost"
         disabled={disabled}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={openFile}
         aria-label="发送文件"
       >
         <Paperclip className="size-4" />
@@ -159,48 +272,12 @@ export function Composer({
       <Button
         variant="ghost"
         disabled={disabled}
-        onClick={() => folderInputRef.current?.click()}
+        onClick={openFolder}
         aria-label="发送文件夹"
       >
         <Folder className="size-4" />
       </Button>
-
-      {coarseVoice ? (
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="按住录音"
-          className="flex h-10 min-h-10 flex-1 touch-none select-none items-center justify-center gap-2 rounded-xl border border-line bg-surface-2/60 text-sm text-fg-muted disabled:opacity-50"
-          onPointerDown={onHoldPointerDown}
-          onPointerMove={onHoldPointerMove}
-          onPointerUp={onHoldPointerUp}
-          onPointerCancel={onHoldPointerUp}
-        >
-          {recording ? (
-            <>
-              <span className="size-2 animate-pulse rounded-full bg-danger" />
-              <span className={cancelArmed ? 'text-danger' : undefined}>
-                {cancelArmed ? '松开取消' : '松开发送 · 上滑取消'}
-              </span>
-            </>
-          ) : (
-            '按住 说话'
-          )}
-        </button>
-      ) : (
-        <textarea
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={disabled}
-          maxLength={8192}
-          rows={1}
-          placeholder={disabled ? '等待连接…' : '输入消息，Enter 发送'}
-          data-testid="composer-input"
-          className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border border-line bg-surface-2/60 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint disabled:opacity-50"
-        />
-      )}
-
+      {middle}
       {showDesktopMic && (
         <Button
           variant="ghost"
@@ -211,8 +288,7 @@ export function Composer({
           <Mic className="size-4" />
         </Button>
       )}
-
-      {text.trim().length > 0 && !coarseVoice && (
+      {text.trim().length > 0 && (
         <Button disabled={disabled} onClick={submit} aria-label="发送">
           <Send className="size-4" />
         </Button>
