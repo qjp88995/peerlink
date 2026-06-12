@@ -24,6 +24,10 @@ function makeStore() {
     appendIncomingVoice: vi.fn(),
     setVoiceReady: vi.fn(),
     setVoiceFailed: vi.fn(),
+    setCallState: vi.fn(),
+    setCallError: vi.fn(),
+    setCallMuted: vi.fn(),
+    appendCallRecord: vi.fn(),
   };
 }
 

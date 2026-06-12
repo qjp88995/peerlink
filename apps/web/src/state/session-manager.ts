@@ -27,6 +27,12 @@ const store: SessionStore = {
     useRoomsStore.getState().setVoiceReady(id, msgId, url),
   setVoiceFailed: (id, msgId) =>
     useRoomsStore.getState().setVoiceFailed(id, msgId),
+  setCallState: (id, state, dir) =>
+    useRoomsStore.getState().setCallState(id, state, dir),
+  setCallError: (id, error) => useRoomsStore.getState().setCallError(id, error),
+  setCallMuted: (id, muted) => useRoomsStore.getState().setCallMuted(id, muted),
+  appendCallRecord: (id, record) =>
+    useRoomsStore.getState().appendCallRecord(id, record),
 };
 
 export const sessionManager = new SessionManager({
