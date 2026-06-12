@@ -29,6 +29,7 @@ export function lastPreview(session: Session): string {
   if (!last) return statusHint(session.connection);
   if (last.kind === 'text') return last.text;
   if (last.kind === 'voice') return '[语音]';
+  if (last.kind === 'call') return '[通话]';
   const name = last.files[0]?.name ?? '文件';
   return last.files.length > 1
     ? `[文件] ${name} 等 ${last.files.length} 个`

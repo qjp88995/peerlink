@@ -7,6 +7,7 @@ import {
 } from '@/core/storage/writer';
 import type { TimelineItem } from '@/state/conversation-store';
 
+import { CallRecordBubble } from './CallRecordBubble';
 import { FileBubble } from './FileBubble';
 import { TextBubble } from './TextBubble';
 import { VoiceBubble } from './VoiceBubble';
@@ -41,6 +42,8 @@ export function Timeline({
           <TextBubble key={item.id} dir={item.dir} text={item.text} />
         ) : item.kind === 'voice' ? (
           <VoiceBubble key={item.id} item={item} />
+        ) : item.kind === 'call' ? (
+          <CallRecordBubble key={item.id} item={item} />
         ) : (
           <FileBubble
             key={item.id}

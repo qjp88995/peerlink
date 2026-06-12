@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import type { FileEntry } from '@peerlink/protocol';
 
+import type { CallDir, CallRecord, CallState } from '../core/call-session';
 import type { Connection, TextItem } from '../core/conversation';
 
 export type FileStatus =
@@ -34,7 +35,23 @@ export type TimelineItem =
       size: number;
       url?: string;
       ts: number;
+    }
+  | {
+      kind: 'call';
+      id: string;
+      dir: 'out' | 'in';
+      durationMs?: number;
+      outcome?: CallRecord['outcome'];
+      ts: number;
     };
+
+export interface CallUiState {
+  state: CallState;
+  dir: CallDir | null;
+  /** 最近一次主叫失败/对端拒绝原因，用于 toast 后清空。 */
+  error?: string;
+  muted: boolean;
+}
 
 export interface Session {
   id: string;
@@ -42,6 +59,7 @@ export interface Session {
   connection: Connection;
   items: TimelineItem[];
   unread: number;
+  call: CallUiState;
 }
 
 interface RoomsState {
@@ -82,6 +100,10 @@ interface RoomsState {
   ): void;
   setVoiceReady(id: string, msgId: string, url: string): void;
   setVoiceFailed(id: string, msgId: string): void;
+  setCallState(id: string, state: CallState, dir: CallDir | null): void;
+  setCallError(id: string, error: string | undefined): void;
+  setCallMuted(id: string, muted: boolean): void;
+  appendCallRecord(id: string, record: CallRecord): void;
   reset(): void;
 }
 
@@ -136,7 +158,14 @@ export const useRoomsStore = create<RoomsState>(set => ({
     set(state => ({
       sessions: {
         ...state.sessions,
-        [id]: { id, roomId, connection: 'connecting', items: [], unread: 0 },
+        [id]: {
+          id,
+          roomId,
+          connection: 'connecting',
+          items: [],
+          unread: 0,
+          call: { state: 'idle', dir: null, muted: false },
+        },
       },
       order: state.order.includes(id) ? state.order : [...state.order, id],
       activeId: id,
@@ -297,6 +326,57 @@ export const useRoomsStore = create<RoomsState>(set => ({
       patchSession(state, id, s => ({
         ...s,
         items: patchVoiceItem(s.items, msgId, { status: 'failed' }),
+      }))
+    ),
+
+  setCallState: (id, state, dir) =>
+    set(s =>
+      patchSession(s, id, sess => ({
+        ...sess,
+        call: {
+          ...sess.call,
+          state,
+          dir,
+          muted: state === 'idle' ? false : sess.call.muted,
+        },
+      }))
+    ),
+
+  setCallError: (id, error) =>
+    set(s =>
+      patchSession(s, id, sess => ({
+        ...sess,
+        call: { ...sess.call, error },
+      }))
+    ),
+
+  setCallMuted: (id, muted) =>
+    set(s =>
+      patchSession(s, id, sess => ({
+        ...sess,
+        call: { ...sess.call, muted },
+      }))
+    ),
+
+  appendCallRecord: (id, record) =>
+    set(s =>
+      patchSession(s, id, sess => ({
+        ...sess,
+        items: [
+          ...sess.items,
+          {
+            kind: 'call',
+            id: crypto.randomUUID(),
+            dir: record.dir,
+            durationMs: record.durationMs,
+            outcome: record.outcome,
+            ts: Date.now(),
+          },
+        ],
+        unread:
+          record.dir === 'out' || id === s.activeId
+            ? sess.unread
+            : sess.unread + 1,
       }))
     ),
 
