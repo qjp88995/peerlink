@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 
-import { Folder, Mic, Paperclip, Send, X } from 'lucide-react';
+import { Folder, Keyboard, Mic, Paperclip, Send, X } from 'lucide-react';
 
 import { Button } from '@/features/common/ui';
 
@@ -32,7 +32,11 @@ export function Composer({
   const coarse =
     typeof matchMedia !== 'undefined' &&
     matchMedia('(pointer: coarse)').matches;
-  const showMic = supported && text.trim().length === 0;
+
+  // 手机端：文字 / 语音互斥模式切换。桌面端不用模式，麦克风作为空输入时的发送位按钮。
+  const [voiceMode, setVoiceMode] = useState(false);
+  const coarseVoice = coarse && voiceMode;
+  const showDesktopMic = !coarse && supported && text.trim().length === 0;
 
   const startYRef = useRef(0);
   const cancelArmedRef = useRef(false);
@@ -58,7 +62,7 @@ export function Composer({
     e.target.value = '';
   }
 
-  function onMicPointerDown(e: PointerEvent<HTMLButtonElement>) {
+  function onHoldPointerDown(e: PointerEvent<HTMLButtonElement>) {
     e.currentTarget.setPointerCapture?.(e.pointerId);
     startYRef.current = e.clientY;
     cancelArmedRef.current = false;
@@ -66,7 +70,7 @@ export function Composer({
     void start();
   }
 
-  function onMicPointerMove(e: PointerEvent<HTMLButtonElement>) {
+  function onHoldPointerMove(e: PointerEvent<HTMLButtonElement>) {
     const armed = startYRef.current - e.clientY > 60;
     if (armed !== cancelArmedRef.current) {
       cancelArmedRef.current = armed;
@@ -74,7 +78,7 @@ export function Composer({
     }
   }
 
-  function onMicPointerUp() {
+  function onHoldPointerUp() {
     if (cancelArmedRef.current) cancel();
     else void stop();
     cancelArmedRef.current = false;
@@ -125,6 +129,25 @@ export function Composer({
         data-testid="folder-input"
         className="hidden"
       />
+
+      {coarse && supported && (
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          aria-label={voiceMode ? '切换到文字' : '切换到语音'}
+          onClick={() => {
+            if (recording) return;
+            setVoiceMode(v => !v);
+          }}
+        >
+          {voiceMode ? (
+            <Keyboard className="size-4" />
+          ) : (
+            <Mic className="size-4" />
+          )}
+        </Button>
+      )}
+
       <Button
         variant="ghost"
         disabled={disabled}
@@ -142,13 +165,28 @@ export function Composer({
         <Folder className="size-4" />
       </Button>
 
-      {coarse && recording ? (
-        <div className="flex h-10 flex-1 items-center gap-2 px-2 text-sm">
-          <span className="size-2 animate-pulse rounded-full bg-danger" />
-          <span className={cancelArmed ? 'text-danger' : 'text-fg-muted'}>
-            {cancelArmed ? '松开取消' : '松开发送 · 上滑取消'}
-          </span>
-        </div>
+      {coarseVoice ? (
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label="按住录音"
+          className="flex h-10 min-h-10 flex-1 touch-none select-none items-center justify-center gap-2 rounded-xl border border-line bg-surface-2/60 text-sm text-fg-muted disabled:opacity-50"
+          onPointerDown={onHoldPointerDown}
+          onPointerMove={onHoldPointerMove}
+          onPointerUp={onHoldPointerUp}
+          onPointerCancel={onHoldPointerUp}
+        >
+          {recording ? (
+            <>
+              <span className="size-2 animate-pulse rounded-full bg-danger" />
+              <span className={cancelArmed ? 'text-danger' : undefined}>
+                {cancelArmed ? '松开取消' : '松开发送 · 上滑取消'}
+              </span>
+            </>
+          ) : (
+            '按住 说话'
+          )}
+        </button>
       ) : (
         <textarea
           value={text}
@@ -163,32 +201,18 @@ export function Composer({
         />
       )}
 
-      {showMic &&
-        (coarse ? (
-          <Button
-            variant="ghost"
-            disabled={disabled}
-            aria-label="按住录音"
-            className="touch-none select-none"
-            onPointerDown={onMicPointerDown}
-            onPointerMove={onMicPointerMove}
-            onPointerUp={onMicPointerUp}
-            onPointerCancel={onMicPointerUp}
-          >
-            <Mic className="size-4" />
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            disabled={disabled}
-            aria-label="录音"
-            onClick={() => void start()}
-          >
-            <Mic className="size-4" />
-          </Button>
-        ))}
+      {showDesktopMic && (
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          aria-label="录音"
+          onClick={() => void start()}
+        >
+          <Mic className="size-4" />
+        </Button>
+      )}
 
-      {text.trim().length > 0 && (
+      {text.trim().length > 0 && !coarseVoice && (
         <Button disabled={disabled} onClick={submit} aria-label="发送">
           <Send className="size-4" />
         </Button>
