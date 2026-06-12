@@ -95,3 +95,43 @@ function fileItem(id: string, transferId: string) {
     throw new Error('no file item ' + transferId);
   return item;
 }
+
+describe('conversation-store voice', () => {
+  beforeEach(() => s().reset());
+
+  it('appendIncomingVoice adds a receiving voice item and bumps unread when inactive', () => {
+    s().addSession('s1', 'room1');
+    s().setActive(null);
+    s().appendIncomingVoice('s1', 'v1', 3000, 500);
+    const item = useRoomsStore.getState().sessions.s1.items[0];
+    expect(item).toMatchObject({
+      kind: 'voice',
+      id: 'v1',
+      dir: 'in',
+      status: 'receiving',
+      durationMs: 3000,
+      size: 500,
+    });
+    expect(useRoomsStore.getState().sessions.s1.unread).toBe(1);
+  });
+
+  it('setVoiceReady flips status and stores url', () => {
+    s().addSession('s1', 'room1');
+    s().appendOutgoingVoice('s1', 'v2', 1000, 200);
+    s().setVoiceReady('s1', 'v2', 'blob:abc');
+    const item = useRoomsStore.getState().sessions.s1.items[0];
+    expect(item).toMatchObject({
+      kind: 'voice',
+      status: 'ready',
+      url: 'blob:abc',
+    });
+  });
+
+  it('setVoiceFailed flips status to failed', () => {
+    s().addSession('s1', 'room1');
+    s().appendIncomingVoice('s1', 'v3', 1000, 200);
+    s().setVoiceFailed('s1', 'v3');
+    const item = useRoomsStore.getState().sessions.s1.items[0];
+    expect(item).toMatchObject({ kind: 'voice', status: 'failed' });
+  });
+});
