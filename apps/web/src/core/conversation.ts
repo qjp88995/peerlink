@@ -1,7 +1,13 @@
 import {
+  BUFFER_HIGH_WATERMARK,
+  BUFFER_LOW_WATERMARK,
   controlMessageSchema,
+  Crc32,
+  crc32,
   decodeFrame,
+  DEFAULT_CHUNK_SIZE,
   encodeControlFrame,
+  encodeDataFrame,
   type FileEntry,
 } from '@peerlink/protocol';
 
@@ -45,6 +51,14 @@ export interface TextItem {
   ts: number;
 }
 
+export interface VoiceItem {
+  id: string;
+  dir: 'out' | 'in';
+  durationMs: number;
+  size: number;
+  ts: number;
+}
+
 export interface OutgoingFiles {
   transferId: string;
   entries: FileEntry[];
@@ -65,6 +79,9 @@ export interface ConversationCallbacks {
   onTransferDone?: (transferId: string) => void;
   onTransferFailed?: (transferId: string, reason?: string) => void;
   onTransferRejected?: (transferId: string) => void;
+  onVoiceStart?: (msgId: string, durationMs: number, totalSize: number) => void;
+  onVoiceReady?: (msgId: string, bytes: Uint8Array, mimeType: string) => void;
+  onVoiceFailed?: (msgId: string) => void;
 }
 
 interface OutgoingState {
@@ -77,6 +94,14 @@ interface IncomingState {
   files: FileEntry[];
   totalSize: number;
   receiver?: TransferReceiver;
+}
+
+interface VoiceAssembler {
+  msgId: string;
+  mimeType: string;
+  durationMs: number;
+  totalSize: number;
+  chunks: Uint8Array[];
 }
 
 export interface ConversationDeps {
@@ -96,6 +121,8 @@ export class Conversation {
   private incoming = new Map<string, IncomingState>();
   private fileIdToTransfer = new Map<number, string>();
   private active = new Set<string>(); // 进行中的 transferId（双向）
+  private voiceIncoming = new Map<string, VoiceAssembler>(); // msgId -> assembler
+  private voiceStreamToMsg = new Map<number, string>(); // streamId -> msgId
 
   constructor(deps: ConversationDeps) {
     this.channel = deps.channel;
@@ -138,6 +165,65 @@ export class Conversation {
     };
   }
 
+  sendVoice(
+    bytes: Uint8Array,
+    mimeType: string,
+    durationMs: number
+  ): { item: VoiceItem; done: Promise<void> } {
+    const msgId = crypto.randomUUID();
+    const streamId = this.nextFileId++;
+    const item: VoiceItem = {
+      id: msgId,
+      dir: 'out',
+      durationMs,
+      size: bytes.length,
+      ts: Date.now(),
+    };
+    const done = this.streamVoice(bytes, mimeType, durationMs, msgId, streamId);
+    return { item, done };
+  }
+
+  private async streamVoice(
+    bytes: Uint8Array,
+    mimeType: string,
+    durationMs: number,
+    msgId: string,
+    streamId: number
+  ): Promise<void> {
+    this.channel.send(
+      encodeControlFrame({
+        type: 'voice-start',
+        msgId,
+        streamId,
+        mimeType,
+        durationMs,
+        totalSize: bytes.length,
+        ts: Date.now(),
+      })
+    );
+    const crcAccum = new Crc32();
+    let chunkIndex = 0;
+    for (let offset = 0; offset < bytes.length; offset += DEFAULT_CHUNK_SIZE) {
+      if (this.channel.bufferedAmount > BUFFER_HIGH_WATERMARK) {
+        await this.channel.waitForDrain(BUFFER_LOW_WATERMARK);
+      }
+      const chunk = bytes.subarray(
+        offset,
+        Math.min(offset + DEFAULT_CHUNK_SIZE, bytes.length)
+      );
+      crcAccum.update(chunk);
+      this.channel.send(encodeDataFrame(streamId, chunkIndex, chunk));
+      chunkIndex++;
+    }
+    this.channel.send(
+      encodeControlFrame({
+        type: 'voice-complete',
+        msgId,
+        crc32: crcAccum.digest(),
+      })
+    );
+  }
+
   async acceptTransfer(transferId: string): Promise<void> {
     const inc = this.incoming.get(transferId);
     if (!inc) return;
@@ -174,6 +260,12 @@ export class Conversation {
   async handleIncoming(bytes: Uint8Array): Promise<void> {
     const frame = decodeFrame(bytes);
     if (frame.kind === 'data') {
+      const vmsg = this.voiceStreamToMsg.get(frame.fileId);
+      if (vmsg) {
+        const va = this.voiceIncoming.get(vmsg);
+        if (va) va.chunks[frame.chunkIndex] = frame.payload.slice();
+        return;
+      }
       const tid = this.fileIdToTransfer.get(frame.fileId);
       const inc = tid ? this.incoming.get(tid) : undefined;
       if (!inc?.receiver) {
@@ -193,6 +285,31 @@ export class Conversation {
           ts: msg.ts,
         });
         return;
+      case 'voice-start':
+        this.voiceIncoming.set(msg.msgId, {
+          msgId: msg.msgId,
+          mimeType: msg.mimeType,
+          durationMs: msg.durationMs,
+          totalSize: msg.totalSize,
+          chunks: [],
+        });
+        this.voiceStreamToMsg.set(msg.streamId, msg.msgId);
+        this.cb.onVoiceStart?.(msg.msgId, msg.durationMs, msg.totalSize);
+        return;
+      case 'voice-complete': {
+        const va = this.voiceIncoming.get(msg.msgId);
+        if (!va) return;
+        this.voiceIncoming.delete(va.msgId);
+        for (const [sid, mid] of this.voiceStreamToMsg)
+          if (mid === va.msgId) this.voiceStreamToMsg.delete(sid);
+        const bytes = concatChunks(va.chunks, va.totalSize);
+        if (crc32(bytes) !== msg.crc32) {
+          this.cb.onVoiceFailed?.(va.msgId);
+          return;
+        }
+        this.cb.onVoiceReady?.(va.msgId, bytes, va.mimeType);
+        return;
+      }
       case 'manifest':
         this.incoming.set(msg.transferId, {
           transferId: msg.transferId,
@@ -245,6 +362,10 @@ export class Conversation {
     for (const tid of this.active)
       this.cb.onTransferFailed?.(tid, '对方已离开');
     this.active.clear();
+    for (const va of this.voiceIncoming.values())
+      this.cb.onVoiceFailed?.(va.msgId);
+    this.voiceIncoming.clear();
+    this.voiceStreamToMsg.clear();
   }
 }
 
@@ -253,6 +374,17 @@ function signalUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const path = import.meta.env.VITE_SIGNAL_PATH ?? '/signal';
   return `${proto}://${location.host}${path}`;
+}
+
+function concatChunks(chunks: Uint8Array[], totalSize: number): Uint8Array {
+  const out = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const c of chunks) {
+    if (!c) continue;
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
 }
 
 function triggerDownload(name: string, blob: Blob): void {
@@ -284,6 +416,11 @@ export interface ConversationHandle {
   conversation: Conversation;
   sendText: (text: string) => TextItem;
   sendFiles: (files: File[]) => OutgoingFiles;
+  sendVoice: (
+    bytes: Uint8Array,
+    mimeType: string,
+    durationMs: number
+  ) => { item: VoiceItem; done: Promise<void> };
   acceptTransfer: (transferId: string) => Promise<void>;
   rejectTransfer: (transferId: string) => void;
   close: () => void;
@@ -415,6 +552,8 @@ export function startConversation(
     conversation: conv,
     sendText: t => conv.sendText(t),
     sendFiles: f => conv.sendFiles(f),
+    sendVoice: (bytes, mimeType, durationMs) =>
+      conv.sendVoice(bytes, mimeType, durationMs),
     acceptTransfer: t => conv.acceptTransfer(t),
     rejectTransfer: t => conv.rejectTransfer(t),
     close: teardown,

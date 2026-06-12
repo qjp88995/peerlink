@@ -18,3 +18,6 @@ export const ROOM_TTL_MS = 10 * 60 * 1000;
 
 /** DataChannel 标签名。 */
 export const DATA_CHANNEL_LABEL = 'peerlink-transfer';
+
+/** 单条语音消息最大录音时长（毫秒）。 */
+export const MAX_VOICE_DURATION_MS = 60 * 1000;

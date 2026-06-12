@@ -33,6 +33,20 @@ export interface SessionStore {
     status: 'transferring' | 'done' | 'failed' | 'rejected'
   ): void;
   updateFileProgress(id: string, transferId: string, sent: number): void;
+  appendOutgoingVoice(
+    id: string,
+    msgId: string,
+    durationMs: number,
+    size: number
+  ): void;
+  appendIncomingVoice(
+    id: string,
+    msgId: string,
+    durationMs: number,
+    size: number
+  ): void;
+  setVoiceReady(id: string, msgId: string, url: string): void;
+  setVoiceFailed(id: string, msgId: string): void;
 }
 
 export interface SessionManagerDeps {
@@ -107,6 +121,36 @@ export class SessionManager {
     );
   }
 
+  async sendVoice(
+    id: string,
+    blob: Blob,
+    mimeType: string,
+    durationMs: number
+  ): Promise<void> {
+    const handle = this.handles.get(id);
+    if (!handle) return;
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await blob.arrayBuffer());
+    } catch {
+      return;
+    }
+    const { item, done } = handle.sendVoice(bytes, mimeType, durationMs);
+    this.store.appendOutgoingVoice(id, item.id, item.durationMs, item.size);
+    done
+      .then(() => {
+        const url = URL.createObjectURL(
+          new Blob([bytes.buffer as ArrayBuffer], { type: mimeType })
+        );
+        if (this.handles.has(id)) {
+          this.store.setVoiceReady(id, item.id, url);
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      })
+      .catch(() => this.store.setVoiceFailed(id, item.id));
+  }
+
   acceptTransfer(id: string, transferId: string): void {
     void this.handles.get(id)?.acceptTransfer(transferId);
   }
@@ -147,6 +191,17 @@ export class SessionManager {
         this.store.updateFileStatus(id, transferId, 'failed'),
       onTransferRejected: transferId =>
         this.store.updateFileStatus(id, transferId, 'rejected'),
+      onVoiceStart: (msgId, durationMs, totalSize) =>
+        this.store.appendIncomingVoice(id, msgId, durationMs, totalSize),
+      onVoiceReady: (msgId, bytes, mimeType) =>
+        this.store.setVoiceReady(
+          id,
+          msgId,
+          URL.createObjectURL(
+            new Blob([bytes.buffer as ArrayBuffer], { type: mimeType })
+          )
+        ),
+      onVoiceFailed: msgId => this.store.setVoiceFailed(id, msgId),
     };
   }
 }

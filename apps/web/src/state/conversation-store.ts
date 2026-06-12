@@ -12,6 +12,8 @@ export type FileStatus =
   | 'failed'
   | 'canceled';
 
+export type VoiceStatus = 'sending' | 'receiving' | 'ready' | 'failed';
+
 export type TimelineItem =
   | { kind: 'text'; id: string; dir: 'out' | 'in'; text: string; ts: number }
   | {
@@ -22,6 +24,16 @@ export type TimelineItem =
       totalSize: number;
       status: FileStatus;
       sent: number;
+    }
+  | {
+      kind: 'voice';
+      id: string;
+      dir: 'out' | 'in';
+      status: VoiceStatus;
+      durationMs: number;
+      size: number;
+      url?: string;
+      ts: number;
     };
 
 export interface Session {
@@ -56,6 +68,20 @@ interface RoomsState {
   ): void;
   updateFileStatus(id: string, transferId: string, status: FileStatus): void;
   updateFileProgress(id: string, transferId: string, sent: number): void;
+  appendOutgoingVoice(
+    id: string,
+    msgId: string,
+    durationMs: number,
+    size: number
+  ): void;
+  appendIncomingVoice(
+    id: string,
+    msgId: string,
+    durationMs: number,
+    size: number
+  ): void;
+  setVoiceReady(id: string, msgId: string, url: string): void;
+  setVoiceFailed(id: string, msgId: string): void;
   reset(): void;
 }
 
@@ -79,6 +105,28 @@ function patchFileItem(
   );
 }
 
+function patchVoiceItem(
+  items: TimelineItem[],
+  msgId: string,
+  patch: Partial<Extract<TimelineItem, { kind: 'voice' }>>
+): TimelineItem[] {
+  return items.map(it =>
+    it.kind === 'voice' && it.id === msgId ? { ...it, ...patch } : it
+  );
+}
+
+function revokeVoiceUrls(session: Session): void {
+  for (const it of session.items) {
+    if (it.kind === 'voice' && it.url) {
+      try {
+        URL.revokeObjectURL(it.url);
+      } catch {
+        /* environment without revokeObjectURL: ignore */
+      }
+    }
+  }
+}
+
 export const useRoomsStore = create<RoomsState>(set => ({
   sessions: {},
   order: [],
@@ -96,6 +144,8 @@ export const useRoomsStore = create<RoomsState>(set => ({
 
   removeSession: id =>
     set(state => {
+      const removed = state.sessions[id];
+      if (removed) revokeVoiceUrls(removed);
       const sessions = { ...state.sessions };
       delete sessions[id];
       return {
@@ -195,5 +245,65 @@ export const useRoomsStore = create<RoomsState>(set => ({
       }))
     ),
 
-  reset: () => set({ sessions: {}, order: [], activeId: null }),
+  appendOutgoingVoice: (id, msgId, durationMs, size) =>
+    set(state =>
+      patchSession(state, id, s => ({
+        ...s,
+        items: [
+          ...s.items,
+          {
+            kind: 'voice',
+            id: msgId,
+            dir: 'out',
+            status: 'sending',
+            durationMs,
+            size,
+            ts: Date.now(),
+          },
+        ],
+      }))
+    ),
+
+  appendIncomingVoice: (id, msgId, durationMs, size) =>
+    set(state =>
+      patchSession(state, id, s => ({
+        ...s,
+        items: [
+          ...s.items,
+          {
+            kind: 'voice',
+            id: msgId,
+            dir: 'in',
+            status: 'receiving',
+            durationMs,
+            size,
+            ts: Date.now(),
+          },
+        ],
+        unread: id === state.activeId ? s.unread : s.unread + 1,
+      }))
+    ),
+
+  setVoiceReady: (id, msgId, url) =>
+    set(state =>
+      patchSession(state, id, s => ({
+        ...s,
+        items: patchVoiceItem(s.items, msgId, { status: 'ready', url }),
+      }))
+    ),
+
+  setVoiceFailed: (id, msgId) =>
+    set(state =>
+      patchSession(state, id, s => ({
+        ...s,
+        items: patchVoiceItem(s.items, msgId, { status: 'failed' }),
+      }))
+    ),
+
+  reset: () =>
+    set(state => {
+      for (const session of Object.values(state.sessions))
+        revokeVoiceUrls(session);
+      return { sessions: {}, order: [], activeId: null };
+    }),
 }));

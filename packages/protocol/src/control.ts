@@ -39,6 +39,20 @@ const cancel = z.object({
   transferId: z.string(),
   reason: z.string().optional(),
 });
+const voiceStart = z.object({
+  type: z.literal('voice-start'),
+  msgId: z.string(),
+  streamId: z.number().int().nonnegative(),
+  mimeType: z.string(),
+  durationMs: z.number().int().nonnegative(),
+  totalSize: z.number().int().nonnegative(),
+  ts: z.number().int(),
+});
+const voiceComplete = z.object({
+  type: z.literal('voice-complete'),
+  msgId: z.string(),
+  crc32: z.number().int().nonnegative(),
+});
 
 export const controlMessageSchema = z.discriminatedUnion('type', [
   chat,
@@ -48,5 +62,7 @@ export const controlMessageSchema = z.discriminatedUnion('type', [
   fileComplete,
   transferComplete,
   cancel,
+  voiceStart,
+  voiceComplete,
 ]);
 export type ControlMessage = z.infer<typeof controlMessageSchema>;

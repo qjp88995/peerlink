@@ -19,6 +19,14 @@ const store: SessionStore = {
     useRoomsStore.getState().updateFileStatus(id, t, s),
   updateFileProgress: (id, t, sent) =>
     useRoomsStore.getState().updateFileProgress(id, t, sent),
+  appendOutgoingVoice: (id, msgId, durationMs, size) =>
+    useRoomsStore.getState().appendOutgoingVoice(id, msgId, durationMs, size),
+  appendIncomingVoice: (id, msgId, durationMs, size) =>
+    useRoomsStore.getState().appendIncomingVoice(id, msgId, durationMs, size),
+  setVoiceReady: (id, msgId, url) =>
+    useRoomsStore.getState().setVoiceReady(id, msgId, url),
+  setVoiceFailed: (id, msgId) =>
+    useRoomsStore.getState().setVoiceFailed(id, msgId),
 };
 
 export const sessionManager = new SessionManager({

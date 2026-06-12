@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   controlMessageSchema,
+  crc32,
   decodeFrame,
   encodeControlFrame,
   encodeDataFrame,
@@ -242,5 +243,154 @@ describe('Conversation — connection', () => {
     conv.closeRemote();
     expect(cb.onConnection).toHaveBeenCalledWith('closed');
     expect(cb.onTransferFailed).toHaveBeenCalledWith('T1', expect.anything());
+  });
+});
+
+describe('Conversation — voice', () => {
+  it('sendVoice emits voice-start, one data frame, then voice-complete', async () => {
+    const ch = new RecordingChannel();
+    const conv = new Conversation({
+      channel: ch,
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const { item, done } = conv.sendVoice(bytes, 'audio/webm', 1234);
+    await done;
+
+    const msgs = controls(ch);
+    expect(msgs[0]).toMatchObject({
+      type: 'voice-start',
+      msgId: item.id,
+      mimeType: 'audio/webm',
+      durationMs: 1234,
+      totalSize: 5,
+    });
+    const dataFrames = ch.frames
+      .map(decodeFrame)
+      .filter(f => f.kind === 'data');
+    expect(dataFrames.length).toBe(1);
+    expect(msgs.at(-1)).toMatchObject({
+      type: 'voice-complete',
+      msgId: item.id,
+    });
+    expect(item).toMatchObject({ dir: 'out', durationMs: 1234, size: 5 });
+  });
+
+  it('sendVoice allocates streamId from the shared file counter', async () => {
+    const ch = new RecordingChannel();
+    const conv = new Conversation({
+      channel: ch,
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    conv.sendFiles([fileBlob('a.txt', [1, 2, 3])]); // 占用 fileId 0
+    const { done } = conv.sendVoice(new Uint8Array([9]), 'audio/webm', 100);
+    await done;
+    const start = controls(ch).find(m => m?.type === 'voice-start');
+    expect(start).toMatchObject({ streamId: 1 });
+  });
+
+  it('assembles an incoming voice message and verifies crc', async () => {
+    const events: {
+      start?: { msgId: string; durationMs: number; totalSize: number };
+      ready?: { msgId: string; bytes: number[]; mimeType: string };
+      failed?: string;
+    } = {};
+    const conv = new Conversation({
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {
+        onVoiceStart: (msgId, durationMs, totalSize) =>
+          (events.start = { msgId, durationMs, totalSize }),
+        onVoiceReady: (msgId, bytes, mimeType) =>
+          (events.ready = { msgId, bytes: Array.from(bytes), mimeType }),
+        onVoiceFailed: msgId => (events.failed = msgId),
+      },
+    });
+    const bytes = new Uint8Array([9, 8, 7, 6]);
+    await conv.handleIncoming(
+      encodeControlFrame({
+        type: 'voice-start',
+        msgId: 'v1',
+        streamId: 0,
+        mimeType: 'audio/webm',
+        durationMs: 500,
+        totalSize: 4,
+        ts: 1,
+      })
+    );
+    await conv.handleIncoming(encodeDataFrame(0, 0, bytes));
+    await conv.handleIncoming(
+      encodeControlFrame({
+        type: 'voice-complete',
+        msgId: 'v1',
+        crc32: crc32(bytes),
+      })
+    );
+
+    expect(events.start).toMatchObject({
+      msgId: 'v1',
+      durationMs: 500,
+      totalSize: 4,
+    });
+    expect(events.ready).toMatchObject({
+      msgId: 'v1',
+      bytes: [9, 8, 7, 6],
+      mimeType: 'audio/webm',
+    });
+    expect(events.failed).toBeUndefined();
+  });
+
+  it('fails an incoming voice message on crc mismatch', async () => {
+    let failed: string | undefined;
+    let ready = false;
+    const conv = new Conversation({
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {
+        onVoiceReady: () => (ready = true),
+        onVoiceFailed: msgId => (failed = msgId),
+      },
+    });
+    await conv.handleIncoming(
+      encodeControlFrame({
+        type: 'voice-start',
+        msgId: 'v2',
+        streamId: 0,
+        mimeType: 'audio/webm',
+        durationMs: 1,
+        totalSize: 2,
+        ts: 1,
+      })
+    );
+    await conv.handleIncoming(encodeDataFrame(0, 0, new Uint8Array([1, 2])));
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'voice-complete', msgId: 'v2', crc32: 999999 })
+    );
+    expect(failed).toBe('v2');
+    expect(ready).toBe(false);
+  });
+
+  it('fails in-flight incoming voice when remote closes', async () => {
+    let failed: string | undefined;
+    const conv = new Conversation({
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: { onVoiceFailed: msgId => (failed = msgId) },
+    });
+    await conv.handleIncoming(
+      encodeControlFrame({
+        type: 'voice-start',
+        msgId: 'v3',
+        streamId: 0,
+        mimeType: 'audio/webm',
+        durationMs: 1,
+        totalSize: 4,
+        ts: 1,
+      })
+    );
+    conv.closeRemote();
+    expect(failed).toBe('v3');
   });
 });

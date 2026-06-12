@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useRoomsStore } from './conversation-store';
 
@@ -95,3 +95,91 @@ function fileItem(id: string, transferId: string) {
     throw new Error('no file item ' + transferId);
   return item;
 }
+
+describe('conversation-store voice', () => {
+  beforeEach(() => s().reset());
+
+  it('appendIncomingVoice adds a receiving voice item and bumps unread when inactive', () => {
+    s().addSession('s1', 'room1');
+    s().setActive(null);
+    s().appendIncomingVoice('s1', 'v1', 3000, 500);
+    const item = useRoomsStore.getState().sessions.s1.items[0];
+    expect(item).toMatchObject({
+      kind: 'voice',
+      id: 'v1',
+      dir: 'in',
+      status: 'receiving',
+      durationMs: 3000,
+      size: 500,
+    });
+    expect(useRoomsStore.getState().sessions.s1.unread).toBe(1);
+  });
+
+  it('setVoiceReady flips status and stores url', () => {
+    s().addSession('s1', 'room1');
+    s().appendOutgoingVoice('s1', 'v2', 1000, 200);
+    s().setVoiceReady('s1', 'v2', 'blob:abc');
+    const item = useRoomsStore.getState().sessions.s1.items[0];
+    expect(item).toMatchObject({
+      kind: 'voice',
+      status: 'ready',
+      url: 'blob:abc',
+    });
+  });
+
+  it('setVoiceFailed flips status to failed', () => {
+    s().addSession('s1', 'room1');
+    s().appendIncomingVoice('s1', 'v3', 1000, 200);
+    s().setVoiceFailed('s1', 'v3');
+    const item = useRoomsStore.getState().sessions.s1.items[0];
+    expect(item).toMatchObject({ kind: 'voice', status: 'failed' });
+  });
+
+  it('appendOutgoingVoice does not bump unread even when inactive', () => {
+    const store = useRoomsStore.getState();
+    store.addSession('s1', 'room1');
+    store.setActive(null);
+    store.appendOutgoingVoice('s1', 'vout', 1000, 200);
+    expect(useRoomsStore.getState().sessions.s1.unread).toBe(0);
+  });
+
+  it('appendIncomingVoice keeps unread at 0 when session is active', () => {
+    const store = useRoomsStore.getState();
+    store.addSession('s1', 'room1'); // addSession sets activeId = 's1'
+    store.setActive('s1');
+    store.appendIncomingVoice('s1', 'vin', 1000, 200);
+    expect(useRoomsStore.getState().sessions.s1.unread).toBe(0);
+  });
+
+  it('revokes voice object urls on removeSession', () => {
+    const revoke = vi.fn();
+    const original = URL.revokeObjectURL;
+    URL.revokeObjectURL = revoke;
+    try {
+      const store = useRoomsStore.getState();
+      store.addSession('s1', 'room1');
+      store.appendIncomingVoice('s1', 'v1', 1000, 100);
+      store.setVoiceReady('s1', 'v1', 'blob:zzz');
+      store.removeSession('s1');
+      expect(revoke).toHaveBeenCalledWith('blob:zzz');
+    } finally {
+      URL.revokeObjectURL = original;
+    }
+  });
+
+  it('revokes voice object urls on reset', () => {
+    const revoke = vi.fn();
+    const original = URL.revokeObjectURL;
+    URL.revokeObjectURL = revoke;
+    try {
+      const store = useRoomsStore.getState();
+      store.addSession('s1', 'room1');
+      store.appendOutgoingVoice('s1', 'v2', 500, 50);
+      store.setVoiceReady('s1', 'v2', 'blob:yyy');
+      store.reset();
+      expect(revoke).toHaveBeenCalledWith('blob:yyy');
+    } finally {
+      URL.revokeObjectURL = original;
+    }
+  });
+});

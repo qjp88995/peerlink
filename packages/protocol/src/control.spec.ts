@@ -78,4 +78,36 @@ describe('controlMessageSchema', () => {
       })
     ).toThrow();
   });
+
+  it('accepts a voice-start message', () => {
+    const msg = {
+      type: 'voice-start',
+      msgId: 'v1',
+      streamId: 3,
+      mimeType: 'audio/webm;codecs=opus',
+      durationMs: 4200,
+      totalSize: 8192,
+      ts: 1717999999,
+    };
+    expect(controlMessageSchema.parse(msg)).toEqual(msg);
+  });
+
+  it('accepts a voice-complete message', () => {
+    const msg = { type: 'voice-complete', msgId: 'v1', crc32: 123456 };
+    expect(controlMessageSchema.parse(msg)).toEqual(msg);
+  });
+
+  it('rejects voice-start with negative streamId', () => {
+    expect(() =>
+      controlMessageSchema.parse({
+        type: 'voice-start',
+        msgId: 'v1',
+        streamId: -1,
+        mimeType: 'audio/webm',
+        durationMs: 1,
+        totalSize: 1,
+        ts: 1,
+      })
+    ).toThrow();
+  });
 });
