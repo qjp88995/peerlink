@@ -21,3 +21,9 @@ export const DATA_CHANNEL_LABEL = 'peerlink-transfer';
 
 /** 单条语音消息最大录音时长（毫秒）。 */
 export const MAX_VOICE_DURATION_MS = 60 * 1000;
+
+/** 呼叫振铃无应答超时（毫秒）。 */
+export const CALL_RING_TIMEOUT_MS = 30 * 1000;
+
+/** 通话中 ICE 断连自愈宽限期（毫秒）。 */
+export const CALL_GRACE_MS = 8 * 1000;

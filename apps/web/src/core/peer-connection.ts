@@ -10,11 +10,13 @@ export interface PeerConnectionOptions {
     candidate?: RTCIceCandidateInit;
   }) => void;
   onStateChange?: (state: RTCIceConnectionState) => void;
+  onRemoteTrack?: (track: MediaStreamTrack) => void;
 }
 
 export class PeerConnection {
   private pc: RTCPeerConnection;
   private dc?: RTCDataChannel;
+  private localSenders: RTCRtpSender[] = [];
 
   constructor(private opts: PeerConnectionOptions) {
     const create = opts.createPc ?? (cfg => new RTCPeerConnection(cfg));
@@ -31,6 +33,9 @@ export class PeerConnection {
     });
     this.pc.addEventListener('datachannel', evt => {
       this.bindChannel((evt as RTCDataChannelEvent).channel);
+    });
+    this.pc.addEventListener('track', evt => {
+      opts.onRemoteTrack?.((evt as RTCTrackEvent).track);
     });
   }
 
@@ -54,6 +59,37 @@ export class PeerConnection {
 
   async addCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     await this.pc.addIceCandidate(candidate);
+  }
+
+  addLocalAudio(stream: MediaStream): void {
+    for (const track of stream.getAudioTracks()) {
+      this.localSenders.push(this.pc.addTrack(track, stream));
+    }
+  }
+
+  removeLocalAudio(): void {
+    for (const sender of this.localSenders) {
+      try {
+        this.pc.removeTrack(sender);
+      } catch {
+        /* 已移除/已关闭则忽略 */
+      }
+    }
+    this.localSenders = [];
+  }
+
+  /** 切换本地麦克风轨的启用状态（静音/取消静音）。 */
+  setMicEnabled(enabled: boolean): void {
+    for (const sender of this.localSenders) {
+      if (sender.track) sender.track.enabled = enabled;
+    }
+  }
+
+  /** 仅由原始 initiator 调用：发起一轮新的 offer/answer 协商。 */
+  async renegotiate(): Promise<void> {
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    this.opts.onSignal?.({ sdp: offer.sdp });
   }
 
   get channel(): RTCDataChannel | undefined {

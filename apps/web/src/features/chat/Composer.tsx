@@ -6,7 +6,16 @@ import {
   useState,
 } from 'react';
 
-import { Folder, Keyboard, Mic, Paperclip, Plus, Send, X } from 'lucide-react';
+import {
+  Folder,
+  Keyboard,
+  Mic,
+  Paperclip,
+  PhoneCall,
+  Plus,
+  Send,
+  X,
+} from 'lucide-react';
 
 import { Button } from '@/features/common/ui';
 
@@ -17,11 +26,15 @@ export function Composer({
   onSendText,
   onSendFiles,
   onSendVoice,
+  onDial,
+  callBusy,
 }: {
   disabled: boolean;
   onSendText: (text: string) => void;
   onSendFiles: (files: File[]) => void;
   onSendVoice: (blob: Blob, mimeType: string, durationMs: number) => void;
+  onDial: () => void;
+  callBusy: boolean;
 }) {
   const [text, setText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -211,6 +224,21 @@ export function Composer({
               </span>
               <span className="text-xs text-fg-muted">文件夹</span>
             </button>
+            <button
+              type="button"
+              disabled={disabled || callBusy}
+              onClick={() => {
+                setShowPlus(false);
+                onDial();
+              }}
+              aria-label="语音通话"
+              className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+            >
+              <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
+                <PhoneCall className="size-6" />
+              </span>
+              <span className="text-xs text-fg-muted">通话</span>
+            </button>
           </div>
         )}
         <div className="flex items-end gap-2 px-3 py-3">
@@ -276,6 +304,14 @@ export function Composer({
         aria-label="发送文件夹"
       >
         <Folder className="size-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        disabled={disabled || callBusy}
+        onClick={onDial}
+        aria-label="语音通话"
+      >
+        <PhoneCall className="size-4" />
       </Button>
       {middle}
       {showDesktopMic && (

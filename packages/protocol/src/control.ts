@@ -54,6 +54,43 @@ const voiceComplete = z.object({
   crc32: z.number().int().nonnegative(),
 });
 
+export const callRejectReasonSchema = z.enum([
+  'declined',
+  'busy',
+  'unsupported',
+  'no-mic',
+  'permission-denied',
+]);
+export type CallRejectReason = z.infer<typeof callRejectReasonSchema>;
+
+export const callEndReasonSchema = z.enum([
+  'hangup',
+  'cancelled',
+  'timeout',
+  'failed',
+]);
+export type CallEndReason = z.infer<typeof callEndReasonSchema>;
+
+const callInvite = z.object({
+  type: z.literal('call-invite'),
+  callId: z.number().int().nonnegative(),
+  ts: z.number().int(),
+});
+const callAccept = z.object({
+  type: z.literal('call-accept'),
+  callId: z.number().int().nonnegative(),
+});
+const callReject = z.object({
+  type: z.literal('call-reject'),
+  callId: z.number().int().nonnegative(),
+  reason: callRejectReasonSchema,
+});
+const callEnd = z.object({
+  type: z.literal('call-end'),
+  callId: z.number().int().nonnegative(),
+  reason: callEndReasonSchema,
+});
+
 export const controlMessageSchema = z.discriminatedUnion('type', [
   chat,
   manifest,
@@ -64,5 +101,9 @@ export const controlMessageSchema = z.discriminatedUnion('type', [
   cancel,
   voiceStart,
   voiceComplete,
+  callInvite,
+  callAccept,
+  callReject,
+  callEnd,
 ]);
 export type ControlMessage = z.infer<typeof controlMessageSchema>;

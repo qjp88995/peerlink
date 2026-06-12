@@ -1,5 +1,6 @@
 import type { FileEntry } from '@peerlink/protocol';
 
+import type { CallDir, CallRecord, CallState } from './call-session';
 import {
   type Connection,
   type ConversationCallbacks,
@@ -7,6 +8,7 @@ import {
   startConversation as defaultStart,
   type TextItem,
 } from './conversation';
+import { type RingKind, Ringtone } from './ringtone';
 
 export interface SessionStore {
   addSession(id: string, roomId: string | null): void;
@@ -47,6 +49,10 @@ export interface SessionStore {
   ): void;
   setVoiceReady(id: string, msgId: string, url: string): void;
   setVoiceFailed(id: string, msgId: string): void;
+  setCallState(id: string, state: CallState, dir: CallDir | null): void;
+  setCallError(id: string, error: string | undefined): void;
+  setCallMuted(id: string, muted: boolean): void;
+  appendCallRecord(id: string, record: CallRecord): void;
 }
 
 export interface SessionManagerDeps {
@@ -60,6 +66,9 @@ export interface SessionManagerDeps {
 export class SessionManager {
   private handles = new Map<string, ConversationHandle>();
   private rooms = new Map<string, string>();
+  private audioEls = new Map<string, HTMLAudioElement>();
+  private ringtone = new Ringtone();
+  private ringingId: string | null = null;
   private store: SessionStore;
   private start: typeof defaultStart;
   private genId: () => string;
@@ -98,6 +107,11 @@ export class SessionManager {
 
   remove(id: string): void {
     this.handles.get(id)?.close();
+    if (this.ringingId === id) {
+      this.ringingId = null;
+      this.ringtone.stop();
+    }
+    this.stopRemote(id);
     this.handles.delete(id);
     this.rooms.delete(id);
     this.store.removeSession(id);
@@ -151,6 +165,64 @@ export class SessionManager {
       .catch(() => this.store.setVoiceFailed(id, item.id));
   }
 
+  dialCall(id: string): void {
+    void this.handles.get(id)?.dialCall();
+  }
+
+  acceptCall(id: string): void {
+    void this.handles.get(id)?.acceptCall();
+  }
+
+  rejectCall(id: string): void {
+    this.handles.get(id)?.rejectCall();
+  }
+
+  hangupCall(id: string): void {
+    this.handles.get(id)?.hangupCall();
+  }
+
+  toggleMute(id: string, muted: boolean): void {
+    this.handles.get(id)?.setMicEnabled(!muted);
+    this.store.setCallMuted(id, muted);
+  }
+
+  private playRemote(id: string, track: MediaStreamTrack): void {
+    let el = this.audioEls.get(id);
+    if (!el) {
+      el = document.createElement('audio');
+      el.autoplay = true;
+      this.audioEls.set(id, el);
+    }
+    el.srcObject = new MediaStream([track]);
+    void el.play?.().catch(() => {});
+  }
+
+  private stopRemote(id: string): void {
+    const el = this.audioEls.get(id);
+    if (el) {
+      el.srcObject = null;
+      this.audioEls.delete(id);
+    }
+  }
+
+  // 来电(ringing/in) 播来电铃，拨号(dialing) 播回铃；接通/结束停。
+  // 仅响铃所属会话能停铃，避免别的会话状态变化误停。
+  private updateRing(id: string, state: CallState, dir: CallDir | null): void {
+    const kind: RingKind | null =
+      state === 'ringing' && dir === 'in'
+        ? 'incoming'
+        : state === 'dialing'
+          ? 'ringback'
+          : null;
+    if (kind) {
+      this.ringingId = id;
+      this.ringtone.start(kind);
+    } else if (this.ringingId === id) {
+      this.ringingId = null;
+      this.ringtone.stop();
+    }
+  }
+
   acceptTransfer(id: string, transferId: string): void {
     void this.handles.get(id)?.acceptTransfer(transferId);
   }
@@ -164,6 +236,9 @@ export class SessionManager {
 
   closeAll(): void {
     for (const handle of this.handles.values()) handle.close();
+    for (const id of [...this.audioEls.keys()]) this.stopRemote(id);
+    this.ringingId = null;
+    this.ringtone.dispose();
     this.handles.clear();
     this.rooms.clear();
   }
@@ -202,6 +277,14 @@ export class SessionManager {
           )
         ),
       onVoiceFailed: msgId => this.store.setVoiceFailed(id, msgId),
+      onCallStateChange: (state, dir) => {
+        this.store.setCallState(id, state, dir);
+        this.updateRing(id, state, dir);
+        if (state === 'idle') this.stopRemote(id);
+      },
+      onCallError: reason => this.store.setCallError(id, reason),
+      onCallEnded: record => this.store.appendCallRecord(id, record),
+      onRemoteAudioTrack: track => this.playRemote(id, track),
     };
   }
 }

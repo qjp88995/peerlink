@@ -1,4 +1,7 @@
+import { useEffect } from 'react';
+
 import { ChevronLeft } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { RoomShare } from '@/features/share/RoomShare';
 import { cn } from '@/lib/cn';
@@ -6,9 +9,19 @@ import type { Session } from '@/state/conversation-store';
 import { useRoomsStore } from '@/state/conversation-store';
 import { sessionManager } from '@/state/session-manager';
 
+import { CallPanel } from './CallPanel';
 import { Composer } from './Composer';
 import { sessionName, statusHint } from './conversation-list.helpers';
+import { IncomingCallPrompt } from './IncomingCallPrompt';
 import { Timeline } from './Timeline';
+
+const CALL_ERROR_TEXT: Record<string, string> = {
+  unsupported: '对方设备不支持语音通话',
+  'no-mic': '对方无可用麦克风',
+  'permission-denied': '对方拒绝了麦克风权限',
+  declined: '对方拒绝接听',
+  busy: '对方正在通话中',
+};
 
 function MobileHeader({ session }: { session: Session }) {
   return (
@@ -37,6 +50,13 @@ export function ConversationView({ className }: { className?: string }) {
   const session = useRoomsStore(s =>
     s.activeId ? s.sessions[s.activeId] : undefined
   );
+  const callError = session?.call.error;
+
+  useEffect(() => {
+    if (!activeId || !callError) return;
+    toast.error(CALL_ERROR_TEXT[callError] ?? '通话失败');
+    useRoomsStore.getState().setCallError(activeId, undefined);
+  }, [activeId, callError]);
 
   if (!activeId || !session) {
     return (
@@ -82,6 +102,19 @@ export function ConversationView({ className }: { className?: string }) {
           网络波动，重连中…
         </div>
       )}
+      {session.call.state === 'ringing' && session.call.dir === 'in' && (
+        <IncomingCallPrompt
+          onAccept={() => sessionManager.acceptCall(activeId)}
+          onReject={() => sessionManager.rejectCall(activeId)}
+        />
+      )}
+      <CallPanel
+        call={session.call}
+        onHangup={() => sessionManager.hangupCall(activeId)}
+        onToggleMute={() =>
+          sessionManager.toggleMute(activeId, !session.call.muted)
+        }
+      />
       <Timeline
         items={session.items}
         onAccept={id => sessionManager.acceptTransfer(activeId, id)}
@@ -94,6 +127,8 @@ export function ConversationView({ className }: { className?: string }) {
         onSendVoice={(blob, mimeType, durationMs) =>
           void sessionManager.sendVoice(activeId, blob, mimeType, durationMs)
         }
+        onDial={() => sessionManager.dialCall(activeId)}
+        callBusy={session.call.state !== 'idle'}
       />
     </main>
   );

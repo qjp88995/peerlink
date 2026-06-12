@@ -1,6 +1,7 @@
 import {
   BUFFER_HIGH_WATERMARK,
   BUFFER_LOW_WATERMARK,
+  type CallRejectReason,
   controlMessageSchema,
   Crc32,
   crc32,
@@ -13,7 +14,15 @@ import {
 
 import { iceServersFromEnv } from '../lib/ice-config';
 import { throttleProgress } from '../lib/progress-throttle';
+import {
+  type CallControl,
+  type CallDir,
+  type CallRecord,
+  CallSession,
+  type CallState,
+} from './call-session';
 import { rtcSendChannel, type SendChannel } from './channel';
+import { acquireMic } from './mic';
 import { PeerConnection } from './peer-connection';
 import { TransferReceiver } from './receiver';
 import {
@@ -82,6 +91,11 @@ export interface ConversationCallbacks {
   onVoiceStart?: (msgId: string, durationMs: number, totalSize: number) => void;
   onVoiceReady?: (msgId: string, bytes: Uint8Array, mimeType: string) => void;
   onVoiceFailed?: (msgId: string) => void;
+  onCallStateChange?: (state: CallState, dir: CallDir | null) => void;
+  onCallIncoming?: () => void;
+  onCallError?: (reason: CallRejectReason) => void;
+  onCallEnded?: (record: CallRecord) => void;
+  onRemoteAudioTrack?: (track: MediaStreamTrack) => void;
 }
 
 interface OutgoingState {
@@ -108,6 +122,10 @@ export interface ConversationDeps {
   channel: SendChannel;
   makeWriter: (files: FileEntry[]) => Promise<Writer>;
   callbacks: ConversationCallbacks;
+  isInitiator: boolean;
+  renegotiate: () => Promise<void>;
+  addLocalAudio: (stream: MediaStream) => void;
+  removeLocalAudio: () => void;
 }
 
 /** 对称会话核心：一条 DataChannel 上多路复用文字 + 多次文件传输。 */
@@ -123,11 +141,51 @@ export class Conversation {
   private active = new Set<string>(); // 进行中的 transferId（双向）
   private voiceIncoming = new Map<string, VoiceAssembler>(); // msgId -> assembler
   private voiceStreamToMsg = new Map<number, string>(); // streamId -> msgId
+  private call: CallSession;
 
   constructor(deps: ConversationDeps) {
     this.channel = deps.channel;
     this.makeWriter = deps.makeWriter;
     this.cb = deps.callbacks;
+    this.call = new CallSession({
+      isInitiator: deps.isInitiator,
+      sendControl: (m: CallControl) => this.channel.send(encodeControlFrame(m)),
+      acquireMic,
+      addLocalAudio: deps.addLocalAudio,
+      removeLocalAudio: deps.removeLocalAudio,
+      renegotiate: deps.renegotiate,
+      genCallId: () => this.nextFileId++,
+      now: () => Date.now(),
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: h => clearTimeout(h as ReturnType<typeof setTimeout>),
+      callbacks: {
+        onStateChange: (s, d) => this.cb.onCallStateChange?.(s, d),
+        onIncoming: () => this.cb.onCallIncoming?.(),
+        onError: r => this.cb.onCallError?.(r),
+        onEnded: r => this.cb.onCallEnded?.(r),
+      },
+    });
+  }
+
+  dialCall(): Promise<void> {
+    return this.call.dial();
+  }
+  acceptCall(): Promise<void> {
+    return this.call.accept();
+  }
+  rejectCall(): void {
+    this.call.reject();
+  }
+  hangupCall(): void {
+    this.call.hangup();
+  }
+  /** 由 peer 的 'track' 事件驱动。 */
+  handleRemoteTrack(track: MediaStreamTrack): void {
+    this.call.onRemoteAudio();
+    this.cb.onRemoteAudioTrack?.(track);
+  }
+  notifyConnectionState(state: RTCIceConnectionState): void {
+    this.call.onConnectionState(state);
   }
 
   setChannel(channel: SendChannel): void {
@@ -338,6 +396,12 @@ export class Conversation {
         this.outgoing.delete(msg.transferId);
         this.cb.onTransferRejected?.(msg.transferId);
         return;
+      case 'call-invite':
+      case 'call-accept':
+      case 'call-reject':
+      case 'call-end':
+        this.call.onControl(msg);
+        return;
       case 'file-complete':
       case 'transfer-complete':
       case 'cancel': {
@@ -366,6 +430,7 @@ export class Conversation {
       this.cb.onVoiceFailed?.(va.msgId);
     this.voiceIncoming.clear();
     this.voiceStreamToMsg.clear();
+    this.call.dispose();
   }
 }
 
@@ -423,6 +488,11 @@ export interface ConversationHandle {
   ) => { item: VoiceItem; done: Promise<void> };
   acceptTransfer: (transferId: string) => Promise<void>;
   rejectTransfer: (transferId: string) => void;
+  dialCall: () => Promise<void>;
+  acceptCall: () => Promise<void>;
+  rejectCall: () => void;
+  hangupCall: () => void;
+  setMicEnabled: (enabled: boolean) => void;
   close: () => void;
 }
 
@@ -435,6 +505,7 @@ export function startConversation(
   let peer: PeerConnection | undefined;
   let targetPeerId: string | undefined;
 
+  const isInitiator = init.mode === 'create';
   const conv = new Conversation({
     // 占位通道：通道未开时调用方应被 UI 禁用；真正通道在 onChannelOpen 注入
     channel: {
@@ -445,6 +516,10 @@ export function startConversation(
       waitForDrain: () => Promise.resolve(),
     },
     makeWriter: defaultMakeWriter,
+    isInitiator,
+    addLocalAudio: stream => peer?.addLocalAudio(stream),
+    removeLocalAudio: () => peer?.removeLocalAudio(),
+    renegotiate: () => peer?.renegotiate() ?? Promise.resolve(),
     callbacks,
   });
 
@@ -469,7 +544,9 @@ export function startConversation(
         callbacks.onConnection?.('connected');
       },
       onMessage: bytes => void conv.handleIncoming(bytes),
+      onRemoteTrack: track => conv.handleRemoteTrack(track),
       onStateChange: state => {
+        conv.notifyConnectionState(state);
         // connected/completed：仅当处于宽限期时视为自愈成功，恢复 UI。
         if (state === 'connected' || state === 'completed') {
           if (graceTimer !== undefined) {
@@ -556,6 +633,11 @@ export function startConversation(
       conv.sendVoice(bytes, mimeType, durationMs),
     acceptTransfer: t => conv.acceptTransfer(t),
     rejectTransfer: t => conv.rejectTransfer(t),
+    dialCall: () => conv.dialCall(),
+    acceptCall: () => conv.acceptCall(),
+    rejectCall: () => conv.rejectCall(),
+    hangupCall: () => conv.hangupCall(),
+    setMicEnabled: e => peer?.setMicEnabled(e),
     close: teardown,
   };
 }

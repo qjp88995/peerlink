@@ -77,11 +77,22 @@ function makeCallbacks() {
   };
 }
 
+// call 功能不在本文件覆盖范围内，给一组空实现满足 ConversationDeps。
+function callDeps() {
+  return {
+    isInitiator: false,
+    renegotiate: () => Promise.resolve(),
+    addLocalAudio: () => {},
+    removeLocalAudio: () => {},
+  };
+}
+
 function setup() {
   const ch = new RecordingChannel();
   const { writer, data } = mockWriter();
   const cb = makeCallbacks();
   const conv = new Conversation({
+    ...callDeps(),
     channel: ch,
     makeWriter: async () => writer,
     callbacks: cb,
@@ -194,6 +205,7 @@ describe('Conversation — multiplexing', () => {
     let n = 0;
     const cb = makeCallbacks();
     const conv = new Conversation({
+      ...callDeps(),
       channel: ch,
       makeWriter: async () => writers[n++],
       callbacks: cb,
@@ -250,6 +262,7 @@ describe('Conversation — voice', () => {
   it('sendVoice emits voice-start, one data frame, then voice-complete', async () => {
     const ch = new RecordingChannel();
     const conv = new Conversation({
+      ...callDeps(),
       channel: ch,
       makeWriter: async () => mockWriter().writer,
       callbacks: {},
@@ -280,6 +293,7 @@ describe('Conversation — voice', () => {
   it('sendVoice allocates streamId from the shared file counter', async () => {
     const ch = new RecordingChannel();
     const conv = new Conversation({
+      ...callDeps(),
       channel: ch,
       makeWriter: async () => mockWriter().writer,
       callbacks: {},
@@ -298,6 +312,7 @@ describe('Conversation — voice', () => {
       failed?: string;
     } = {};
     const conv = new Conversation({
+      ...callDeps(),
       channel: new RecordingChannel(),
       makeWriter: async () => mockWriter().writer,
       callbacks: {
@@ -346,6 +361,7 @@ describe('Conversation — voice', () => {
     let failed: string | undefined;
     let ready = false;
     const conv = new Conversation({
+      ...callDeps(),
       channel: new RecordingChannel(),
       makeWriter: async () => mockWriter().writer,
       callbacks: {
@@ -375,6 +391,7 @@ describe('Conversation — voice', () => {
   it('fails in-flight incoming voice when remote closes', async () => {
     let failed: string | undefined;
     const conv = new Conversation({
+      ...callDeps(),
       channel: new RecordingChannel(),
       makeWriter: async () => mockWriter().writer,
       callbacks: { onVoiceFailed: msgId => (failed = msgId) },
