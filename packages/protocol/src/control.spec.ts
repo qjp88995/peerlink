@@ -110,4 +110,34 @@ describe('controlMessageSchema', () => {
       })
     ).toThrow();
   });
+
+  it('parses call-invite', () => {
+    const msg = { type: 'call-invite', callId: 7, ts: 1000 };
+    expect(controlMessageSchema.parse(msg)).toEqual(msg);
+  });
+
+  it('parses call-accept', () => {
+    const msg = { type: 'call-accept', callId: 7 };
+    expect(controlMessageSchema.parse(msg)).toEqual(msg);
+  });
+
+  it('parses call-reject with reason', () => {
+    const msg = { type: 'call-reject', callId: 7, reason: 'busy' };
+    expect(controlMessageSchema.parse(msg)).toEqual(msg);
+  });
+
+  it('parses call-end with reason', () => {
+    const msg = { type: 'call-end', callId: 7, reason: 'hangup' };
+    expect(controlMessageSchema.parse(msg)).toEqual(msg);
+  });
+
+  it('rejects unknown call-reject reason', () => {
+    expect(() =>
+      controlMessageSchema.parse({
+        type: 'call-reject',
+        callId: 7,
+        reason: 'nope',
+      })
+    ).toThrow();
+  });
 });
