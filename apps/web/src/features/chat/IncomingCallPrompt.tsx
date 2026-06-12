@@ -26,7 +26,7 @@ export function IncomingCallPrompt({
           type="button"
           onClick={onAccept}
           aria-label="接听"
-          className="flex size-10 items-center justify-center rounded-full bg-signal text-white"
+          className="flex size-10 items-center justify-center rounded-full bg-success text-ink"
         >
           <Phone className="size-5" />
         </button>
