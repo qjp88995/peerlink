@@ -58,6 +58,26 @@ describe('conversation-list helpers', () => {
     ).toBe('[文件] a.png');
   });
 
+  it('previews a voice message', () => {
+    expect(
+      lastPreview(
+        session({
+          items: [
+            {
+              kind: 'voice',
+              id: 'v1',
+              dir: 'in',
+              status: 'ready',
+              durationMs: 1000,
+              size: 100,
+              ts: 0,
+            },
+          ],
+        })
+      )
+    ).toBe('[语音]');
+  });
+
   it('falls back to a status hint when there are no messages', () => {
     expect(lastPreview(session({ items: [], connection: 'waiting' }))).toBe(
       '等待对方加入…'

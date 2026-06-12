@@ -134,4 +134,20 @@ describe('conversation-store voice', () => {
     const item = useRoomsStore.getState().sessions.s1.items[0];
     expect(item).toMatchObject({ kind: 'voice', status: 'failed' });
   });
+
+  it('appendOutgoingVoice does not bump unread even when inactive', () => {
+    const store = useRoomsStore.getState();
+    store.addSession('s1', 'room1');
+    store.setActive(null);
+    store.appendOutgoingVoice('s1', 'vout', 1000, 200);
+    expect(useRoomsStore.getState().sessions.s1.unread).toBe(0);
+  });
+
+  it('appendIncomingVoice keeps unread at 0 when session is active', () => {
+    const store = useRoomsStore.getState();
+    store.addSession('s1', 'room1'); // addSession sets activeId = 's1'
+    store.setActive('s1');
+    store.appendIncomingVoice('s1', 'vin', 1000, 200);
+    expect(useRoomsStore.getState().sessions.s1.unread).toBe(0);
+  });
 });
