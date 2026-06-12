@@ -142,7 +142,11 @@ export class SessionManager {
         const url = URL.createObjectURL(
           new Blob([bytes.buffer as ArrayBuffer], { type: mimeType })
         );
-        this.store.setVoiceReady(id, item.id, url);
+        if (this.handles.has(id)) {
+          this.store.setVoiceReady(id, item.id, url);
+        } else {
+          URL.revokeObjectURL(url);
+        }
       })
       .catch(() => this.store.setVoiceFailed(id, item.id));
   }

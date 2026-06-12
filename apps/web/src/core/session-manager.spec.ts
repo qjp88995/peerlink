@@ -189,4 +189,36 @@ describe('SessionManager', () => {
     captured?.onVoiceFailed?.('v1');
     expect(store.setVoiceFailed).toHaveBeenCalledWith('id1', 'v1');
   });
+
+  it('revokes the voice url if the session was removed before the send completed', async () => {
+    const store = makeStore();
+    let resolveDone!: () => void;
+    const done = new Promise<void>(r => (resolveDone = r));
+    const start: Start = () =>
+      fakeHandle({
+        sendVoice: () => ({
+          item: { id: 'vx', dir: 'out', durationMs: 1, size: 3, ts: 0 },
+          done,
+        }),
+      });
+    const mgr = new SessionManager({
+      store: store as unknown as SessionStore,
+      start,
+      genId: () => 'id1',
+    });
+    const id = mgr.create();
+    const revoke = vi.fn();
+    globalThis.URL.createObjectURL = () => 'blob:gone';
+    globalThis.URL.revokeObjectURL = revoke;
+    const blob = {
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    } as Blob;
+    await mgr.sendVoice(id, blob, 'audio/webm', 1);
+    mgr.remove(id); // session removed before done resolves
+    resolveDone();
+    await done;
+    await Promise.resolve();
+    expect(store.setVoiceReady).not.toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalledWith('blob:gone');
+  });
 });
