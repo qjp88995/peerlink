@@ -30,6 +30,10 @@ function fakeHandle(
     conversation: undefined as unknown as ConversationHandle['conversation'],
     sendText: (text: string) => ({ id: 'out', dir: 'out', text, ts: 0 }),
     sendFiles: () => ({ transferId: 'T', entries: [], totalSize: 0 }),
+    sendVoice: () => ({
+      item: { id: 'v', dir: 'out', durationMs: 0, size: 0, ts: 0 },
+      done: Promise.resolve(),
+    }),
     acceptTransfer: () => Promise.resolve(),
     rejectTransfer: () => {},
     close: () => {},
