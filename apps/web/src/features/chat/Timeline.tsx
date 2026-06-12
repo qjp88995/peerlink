@@ -9,6 +9,7 @@ import type { TimelineItem } from '@/state/conversation-store';
 
 import { FileBubble } from './FileBubble';
 import { TextBubble } from './TextBubble';
+import { VoiceBubble } from './VoiceBubble';
 
 function unsupportedReason(item: Extract<TimelineItem, { kind: 'file' }>) {
   if (item.dir !== 'in') return undefined;
@@ -38,6 +39,8 @@ export function Timeline({
       {items.map(item =>
         item.kind === 'text' ? (
           <TextBubble key={item.id} dir={item.dir} text={item.text} />
+        ) : item.kind === 'voice' ? (
+          <VoiceBubble key={item.id} item={item} />
         ) : (
           <FileBubble
             key={item.id}
