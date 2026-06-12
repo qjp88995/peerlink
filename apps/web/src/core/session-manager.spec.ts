@@ -20,6 +20,10 @@ function makeStore() {
     appendOutgoingFiles: vi.fn(),
     updateFileStatus: vi.fn(),
     updateFileProgress: vi.fn(),
+    appendOutgoingVoice: vi.fn(),
+    appendIncomingVoice: vi.fn(),
+    setVoiceReady: vi.fn(),
+    setVoiceFailed: vi.fn(),
   };
 }
 
@@ -123,5 +127,66 @@ describe('SessionManager', () => {
     mgr.remove(id);
     expect(close).toHaveBeenCalled();
     expect(store.removeSession).toHaveBeenCalledWith('id1');
+  });
+
+  it('sends a voice message: appends outgoing then marks ready when done resolves', async () => {
+    const store = makeStore();
+    let resolveDone!: () => void;
+    const done = new Promise<void>(r => (resolveDone = r));
+    const start: Start = () =>
+      fakeHandle({
+        sendVoice: () => ({
+          item: { id: 'vx', dir: 'out', durationMs: 1000, size: 3, ts: 0 },
+          done,
+        }),
+      });
+    const mgr = new SessionManager({
+      store: store as unknown as SessionStore,
+      start,
+      genId: () => 'id1',
+    });
+    const id = mgr.create();
+    globalThis.URL.createObjectURL = () => 'blob:test';
+    const blob = {
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    } as Blob;
+    await mgr.sendVoice(id, blob, 'audio/webm', 1000);
+    expect(store.appendOutgoingVoice).toHaveBeenCalledWith(
+      'id1',
+      'vx',
+      1000,
+      3
+    );
+    resolveDone();
+    await done;
+    await Promise.resolve();
+    expect(store.setVoiceReady).toHaveBeenCalledWith('id1', 'vx', 'blob:test');
+  });
+
+  it('wires incoming voice callbacks to the store', () => {
+    const store = makeStore();
+    let captured: ConversationCallbacks | undefined;
+    const start: Start = (_init, callbacks) => {
+      captured = callbacks;
+      return fakeHandle();
+    };
+    const mgr = new SessionManager({
+      store: store as unknown as SessionStore,
+      start,
+      genId: () => 'id1',
+    });
+    mgr.create();
+    globalThis.URL.createObjectURL = () => 'blob:in';
+    captured?.onVoiceStart?.('v1', 2000, 500);
+    expect(store.appendIncomingVoice).toHaveBeenCalledWith(
+      'id1',
+      'v1',
+      2000,
+      500
+    );
+    captured?.onVoiceReady?.('v1', new Uint8Array([1]), 'audio/webm');
+    expect(store.setVoiceReady).toHaveBeenCalledWith('id1', 'v1', 'blob:in');
+    captured?.onVoiceFailed?.('v1');
+    expect(store.setVoiceFailed).toHaveBeenCalledWith('id1', 'v1');
   });
 });
