@@ -40,6 +40,11 @@ function fakeHandle(
     }),
     acceptTransfer: () => Promise.resolve(),
     rejectTransfer: () => {},
+    dialCall: () => Promise.resolve(),
+    acceptCall: () => Promise.resolve(),
+    rejectCall: () => {},
+    hangupCall: () => {},
+    setMicEnabled: () => {},
     close: () => {},
     ...over,
   };
