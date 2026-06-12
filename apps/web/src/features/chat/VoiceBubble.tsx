@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-import { AlertCircle, Loader2, Pause, Play } from 'lucide-react';
+import { AlertCircle, Loader2, Volume2 } from 'lucide-react';
 
 import { cn } from '@/lib/cn';
 import type { TimelineItem } from '@/state/conversation-store';
@@ -25,51 +25,46 @@ export function VoiceBubble({ item }: { item: Voice }) {
 
   return (
     <div className={cn('flex', out ? 'justify-end' : 'justify-start')}>
-      <div
+      <button
+        type="button"
+        onClick={ready ? toggle : undefined}
+        disabled={!ready}
+        aria-label={failed ? '语音失败' : playing ? '暂停' : '播放语音'}
         className={cn(
-          'flex items-center gap-2.5 rounded-2xl px-3.5 py-2 text-sm',
+          'flex min-w-24 items-center gap-2.5 rounded-2xl px-3.5 py-2.5 text-sm',
           out
-            ? 'bg-signal text-ink'
-            : 'border border-line bg-surface-2/60 text-fg'
+            ? 'flex-row-reverse bg-signal text-ink'
+            : 'border border-line bg-surface-2/60 text-fg',
+          ready && 'cursor-pointer'
         )}
       >
         {failed ? (
           <span className="flex items-center gap-1.5 text-fg-muted">
             <AlertCircle className="size-4" /> 语音失败
           </span>
+        ) : !ready ? (
+          <Loader2 className="size-4 animate-spin" />
         ) : (
           <>
-            <button
-              type="button"
-              onClick={toggle}
-              disabled={!ready}
-              aria-label={playing ? '暂停' : '播放'}
-              className="flex size-8 items-center justify-center rounded-full bg-black/10 disabled:opacity-50"
-            >
-              {!ready ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : playing ? (
-                <Pause className="size-4" />
-              ) : (
-                <Play className="size-4" />
-              )}
-            </button>
+            <Volume2
+              className={cn('size-4 shrink-0', playing && 'animate-pulse')}
+            />
             <span className="tabular-nums">
               {formatDuration(item.durationMs)}
             </span>
-            {ready && (
-              <audio
-                ref={audioRef}
-                src={item.url}
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onEnded={() => setPlaying(false)}
-                className="hidden"
-              />
-            )}
           </>
         )}
-      </div>
+      </button>
+      {ready && (
+        <audio
+          ref={audioRef}
+          src={item.url}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          className="hidden"
+        />
+      )}
     </div>
   );
 }
