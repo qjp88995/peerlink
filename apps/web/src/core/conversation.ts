@@ -1,7 +1,12 @@
 import {
+  BUFFER_HIGH_WATERMARK,
+  BUFFER_LOW_WATERMARK,
   controlMessageSchema,
+  Crc32,
   decodeFrame,
+  DEFAULT_CHUNK_SIZE,
   encodeControlFrame,
+  encodeDataFrame,
   type FileEntry,
 } from '@peerlink/protocol';
 
@@ -42,6 +47,14 @@ export interface TextItem {
   id: string;
   dir: 'out' | 'in';
   text: string;
+  ts: number;
+}
+
+export interface VoiceItem {
+  id: string;
+  dir: 'out' | 'in';
+  durationMs: number;
+  size: number;
   ts: number;
 }
 
@@ -136,6 +149,65 @@ export class Conversation {
       entries: manifest.files,
       totalSize: manifest.totalSize,
     };
+  }
+
+  sendVoice(
+    bytes: Uint8Array,
+    mimeType: string,
+    durationMs: number
+  ): { item: VoiceItem; done: Promise<void> } {
+    const msgId = crypto.randomUUID();
+    const streamId = this.nextFileId++;
+    const item: VoiceItem = {
+      id: msgId,
+      dir: 'out',
+      durationMs,
+      size: bytes.length,
+      ts: Date.now(),
+    };
+    const done = this.streamVoice(bytes, mimeType, durationMs, msgId, streamId);
+    return { item, done };
+  }
+
+  private async streamVoice(
+    bytes: Uint8Array,
+    mimeType: string,
+    durationMs: number,
+    msgId: string,
+    streamId: number
+  ): Promise<void> {
+    this.channel.send(
+      encodeControlFrame({
+        type: 'voice-start',
+        msgId,
+        streamId,
+        mimeType,
+        durationMs,
+        totalSize: bytes.length,
+        ts: Date.now(),
+      })
+    );
+    const crcAccum = new Crc32();
+    let chunkIndex = 0;
+    for (let offset = 0; offset < bytes.length; offset += DEFAULT_CHUNK_SIZE) {
+      if (this.channel.bufferedAmount > BUFFER_HIGH_WATERMARK) {
+        await this.channel.waitForDrain(BUFFER_LOW_WATERMARK);
+      }
+      const chunk = bytes.subarray(
+        offset,
+        Math.min(offset + DEFAULT_CHUNK_SIZE, bytes.length)
+      );
+      crcAccum.update(chunk);
+      this.channel.send(encodeDataFrame(streamId, chunkIndex, chunk));
+      chunkIndex++;
+    }
+    this.channel.send(
+      encodeControlFrame({
+        type: 'voice-complete',
+        msgId,
+        crc32: crcAccum.digest(),
+      })
+    );
   }
 
   async acceptTransfer(transferId: string): Promise<void> {

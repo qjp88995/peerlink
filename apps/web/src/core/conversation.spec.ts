@@ -244,3 +244,49 @@ describe('Conversation — connection', () => {
     expect(cb.onTransferFailed).toHaveBeenCalledWith('T1', expect.anything());
   });
 });
+
+describe('Conversation — voice', () => {
+  it('sendVoice emits voice-start, one data frame, then voice-complete', async () => {
+    const ch = new RecordingChannel();
+    const conv = new Conversation({
+      channel: ch,
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const { item, done } = conv.sendVoice(bytes, 'audio/webm', 1234);
+    await done;
+
+    const msgs = controls(ch);
+    expect(msgs[0]).toMatchObject({
+      type: 'voice-start',
+      msgId: item.id,
+      mimeType: 'audio/webm',
+      durationMs: 1234,
+      totalSize: 5,
+    });
+    const dataFrames = ch.frames
+      .map(decodeFrame)
+      .filter(f => f.kind === 'data');
+    expect(dataFrames.length).toBe(1);
+    expect(msgs.at(-1)).toMatchObject({
+      type: 'voice-complete',
+      msgId: item.id,
+    });
+    expect(item).toMatchObject({ dir: 'out', durationMs: 1234, size: 5 });
+  });
+
+  it('sendVoice allocates streamId from the shared file counter', async () => {
+    const ch = new RecordingChannel();
+    const conv = new Conversation({
+      channel: ch,
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    conv.sendFiles([fileBlob('a.txt', [1, 2, 3])]); // 占用 fileId 0
+    const { done } = conv.sendVoice(new Uint8Array([9]), 'audio/webm', 100);
+    await done;
+    const start = controls(ch).find(m => m?.type === 'voice-start');
+    expect(start).toMatchObject({ streamId: 1 });
+  });
+});
