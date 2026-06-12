@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useRoomsStore } from './conversation-store';
 
@@ -149,5 +149,37 @@ describe('conversation-store voice', () => {
     store.setActive('s1');
     store.appendIncomingVoice('s1', 'vin', 1000, 200);
     expect(useRoomsStore.getState().sessions.s1.unread).toBe(0);
+  });
+
+  it('revokes voice object urls on removeSession', () => {
+    const revoke = vi.fn();
+    const original = URL.revokeObjectURL;
+    URL.revokeObjectURL = revoke;
+    try {
+      const store = useRoomsStore.getState();
+      store.addSession('s1', 'room1');
+      store.appendIncomingVoice('s1', 'v1', 1000, 100);
+      store.setVoiceReady('s1', 'v1', 'blob:zzz');
+      store.removeSession('s1');
+      expect(revoke).toHaveBeenCalledWith('blob:zzz');
+    } finally {
+      URL.revokeObjectURL = original;
+    }
+  });
+
+  it('revokes voice object urls on reset', () => {
+    const revoke = vi.fn();
+    const original = URL.revokeObjectURL;
+    URL.revokeObjectURL = revoke;
+    try {
+      const store = useRoomsStore.getState();
+      store.addSession('s1', 'room1');
+      store.appendOutgoingVoice('s1', 'v2', 500, 50);
+      store.setVoiceReady('s1', 'v2', 'blob:yyy');
+      store.reset();
+      expect(revoke).toHaveBeenCalledWith('blob:yyy');
+    } finally {
+      URL.revokeObjectURL = original;
+    }
   });
 });

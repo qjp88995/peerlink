@@ -115,6 +115,18 @@ function patchVoiceItem(
   );
 }
 
+function revokeVoiceUrls(session: Session): void {
+  for (const it of session.items) {
+    if (it.kind === 'voice' && it.url) {
+      try {
+        URL.revokeObjectURL(it.url);
+      } catch {
+        /* environment without revokeObjectURL: ignore */
+      }
+    }
+  }
+}
+
 export const useRoomsStore = create<RoomsState>(set => ({
   sessions: {},
   order: [],
@@ -132,6 +144,8 @@ export const useRoomsStore = create<RoomsState>(set => ({
 
   removeSession: id =>
     set(state => {
+      const removed = state.sessions[id];
+      if (removed) revokeVoiceUrls(removed);
       const sessions = { ...state.sessions };
       delete sessions[id];
       return {
@@ -286,5 +300,10 @@ export const useRoomsStore = create<RoomsState>(set => ({
       }))
     ),
 
-  reset: () => set({ sessions: {}, order: [], activeId: null }),
+  reset: () =>
+    set(state => {
+      for (const session of Object.values(state.sessions))
+        revokeVoiceUrls(session);
+      return { sessions: {}, order: [], activeId: null };
+    }),
 }));
