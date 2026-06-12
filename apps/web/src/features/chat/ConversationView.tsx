@@ -91,6 +91,9 @@ export function ConversationView({ className }: { className?: string }) {
         disabled={!connected}
         onSendText={text => sessionManager.sendText(activeId, text)}
         onSendFiles={files => sessionManager.sendFiles(activeId, files)}
+        onSendVoice={(blob, mimeType, durationMs) =>
+          void sessionManager.sendVoice(activeId, blob, mimeType, durationMs)
+        }
       />
     </main>
   );
