@@ -53,6 +53,8 @@ export interface CallUiState {
   error?: string;
   muted: boolean;
   screen: ScreenState;
+  /** 屏幕流到达信号：流存入非响应式 Map 后递增，驱动 UI 重渲染并重新绑定 video。 */
+  screenNonce: number;
 }
 
 export interface Session {
@@ -106,6 +108,8 @@ interface RoomsState {
   setCallError(id: string, error: string | undefined): void;
   setCallMuted(id: string, muted: boolean): void;
   setScreenState(id: string, screen: ScreenState): void;
+  /** 屏幕流（本端/远端）到达后调用，触发重渲染以绑定 video。 */
+  bumpScreen(id: string): void;
   appendCallRecord(id: string, record: CallRecord): void;
   reset(): void;
 }
@@ -167,7 +171,13 @@ export const useRoomsStore = create<RoomsState>(set => ({
           connection: 'connecting',
           items: [],
           unread: 0,
-          call: { state: 'idle', dir: null, muted: false, screen: 'none' },
+          call: {
+            state: 'idle',
+            dir: null,
+            muted: false,
+            screen: 'none',
+            screenNonce: 0,
+          },
         },
       },
       order: state.order.includes(id) ? state.order : [...state.order, id],
@@ -366,6 +376,14 @@ export const useRoomsStore = create<RoomsState>(set => ({
       patchSession(s, id, sess => ({
         ...sess,
         call: { ...sess.call, screen },
+      }))
+    ),
+
+  bumpScreen: id =>
+    set(s =>
+      patchSession(s, id, sess => ({
+        ...sess,
+        call: { ...sess.call, screenNonce: sess.call.screenNonce + 1 },
       }))
     ),
 

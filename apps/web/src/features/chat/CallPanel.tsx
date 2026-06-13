@@ -142,7 +142,11 @@ export function CallPanel({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (el) el.srcObject = screenStream;
+    if (!el) return;
+    el.srcObject = screenStream;
+    // 显式 play：挂载后才赋 srcObject 时 autoPlay 属性不总触发；
+    // 忽略 AbortError（连续赋值打断）/ 自动播放拦截，有帧/手势后会自行恢复。
+    if (screenStream) void el.play().catch(() => {});
   }, [screenStream]);
 
   if (call.state === 'idle' || call.state === 'ringing') return null;

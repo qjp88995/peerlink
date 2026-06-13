@@ -54,6 +54,7 @@ export interface SessionStore {
   setCallError(id: string, error: string | undefined): void;
   setCallMuted(id: string, muted: boolean): void;
   setScreenState(id: string, screen: ScreenState): void;
+  bumpScreen(id: string): void;
   appendCallRecord(id: string, record: CallRecord): void;
 }
 
@@ -324,9 +325,12 @@ export class SessionManager {
       onLocalScreenStream: stream => {
         if (stream) this.localScreens.set(id, stream);
         else this.localScreens.delete(id);
+        this.store.bumpScreen(id);
       },
       onRemoteScreenTrack: track => {
         this.remoteScreens.set(id, new MediaStream([track]));
+        // 流存入非响应式 Map，须显式通知 store 触发重渲染、绑定 video。
+        this.store.bumpScreen(id);
       },
       onScreenError: () => {
         // 共享失败（取消/无权限）：状态由模块回到 none，此处可选 toast。
