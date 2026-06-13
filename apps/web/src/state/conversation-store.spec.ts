@@ -182,4 +182,11 @@ describe('conversation-store voice', () => {
       URL.revokeObjectURL = original;
     }
   });
+
+  it('defaults call.screen to none and setScreenState updates it', () => {
+    s().addSession('s1', null);
+    expect(s().sessions.s1.call.screen).toBe('none');
+    s().setScreenState('s1', 'local');
+    expect(s().sessions.s1.call.screen).toBe('local');
+  });
 });

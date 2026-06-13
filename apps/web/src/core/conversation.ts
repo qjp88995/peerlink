@@ -26,6 +26,12 @@ import { acquireMic } from './mic';
 import { PeerConnection } from './peer-connection';
 import { TransferReceiver } from './receiver';
 import {
+  type ScreenControl,
+  type ScreenError,
+  ScreenShare,
+  type ScreenState,
+} from './screen-share';
+import {
   browserFileToSource,
   buildManifest,
   type SourceFile,
@@ -96,6 +102,10 @@ export interface ConversationCallbacks {
   onCallError?: (reason: CallRejectReason) => void;
   onCallEnded?: (record: CallRecord) => void;
   onRemoteAudioTrack?: (track: MediaStreamTrack) => void;
+  onScreenStateChange?: (state: ScreenState) => void;
+  onLocalScreenStream?: (stream: MediaStream | null) => void;
+  onRemoteScreenTrack?: (track: MediaStreamTrack) => void;
+  onScreenError?: (reason: ScreenError) => void;
 }
 
 interface OutgoingState {
@@ -126,6 +136,9 @@ export interface ConversationDeps {
   renegotiate: () => Promise<void>;
   addLocalAudio: (stream: MediaStream) => void;
   removeLocalAudio: () => void;
+  setScreenTrack: (track: MediaStreamTrack) => void;
+  prepareRecvVideo: () => void;
+  clearScreenTrack: () => void;
 }
 
 /** 对称会话核心：一条 DataChannel 上多路复用文字 + 多次文件传输。 */
@@ -142,6 +155,7 @@ export class Conversation {
   private voiceIncoming = new Map<string, VoiceAssembler>(); // msgId -> assembler
   private voiceStreamToMsg = new Map<number, string>(); // streamId -> msgId
   private call: CallSession;
+  private screen: ScreenShare;
 
   constructor(deps: ConversationDeps) {
     this.channel = deps.channel;
@@ -159,10 +173,31 @@ export class Conversation {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: h => clearTimeout(h as ReturnType<typeof setTimeout>),
       callbacks: {
-        onStateChange: (s, d) => this.cb.onCallStateChange?.(s, d),
+        onStateChange: (s, d) => {
+          // 挂断/结束会议时一并收尾屏幕共享：停本地采集、清轨、复位。
+          if (s === 'idle') this.screen.dispose();
+          this.cb.onCallStateChange?.(s, d);
+        },
         onIncoming: () => this.cb.onCallIncoming?.(),
         onError: r => this.cb.onCallError?.(r),
         onEnded: r => this.cb.onCallEnded?.(r),
+      },
+    });
+    this.screen = new ScreenShare({
+      isInitiator: deps.isInitiator,
+      sendControl: (m: ScreenControl) =>
+        this.channel.send(encodeControlFrame(m)),
+      acquireDisplay: () =>
+        navigator.mediaDevices.getDisplayMedia({ video: true }),
+      setScreenTrack: deps.setScreenTrack,
+      prepareRecvVideo: deps.prepareRecvVideo,
+      clearScreenTrack: deps.clearScreenTrack,
+      renegotiate: deps.renegotiate,
+      getCallId: () => this.call.currentCallId(),
+      callbacks: {
+        onStateChange: s => this.cb.onScreenStateChange?.(s),
+        onLocalStream: s => this.cb.onLocalScreenStream?.(s),
+        onError: r => this.cb.onScreenError?.(r),
       },
     });
   }
@@ -179,8 +214,18 @@ export class Conversation {
   hangupCall(): void {
     this.call.hangup();
   }
+  startScreenShare(): Promise<void> {
+    return this.screen.start();
+  }
+  stopScreenShare(): Promise<void> {
+    return this.screen.stop();
+  }
   /** 由 peer 的 'track' 事件驱动。 */
   handleRemoteTrack(track: MediaStreamTrack): void {
+    if (track.kind === 'video') {
+      this.cb.onRemoteScreenTrack?.(track);
+      return;
+    }
     this.call.onRemoteAudio();
     this.cb.onRemoteAudioTrack?.(track);
   }
@@ -402,6 +447,10 @@ export class Conversation {
       case 'call-end':
         this.call.onControl(msg);
         return;
+      case 'screen-start':
+      case 'screen-stop':
+        await this.screen.onControl(msg);
+        return;
       case 'file-complete':
       case 'transfer-complete':
       case 'cancel': {
@@ -431,6 +480,7 @@ export class Conversation {
     this.voiceIncoming.clear();
     this.voiceStreamToMsg.clear();
     this.call.dispose();
+    this.screen.dispose();
   }
 }
 
@@ -492,6 +542,8 @@ export interface ConversationHandle {
   acceptCall: () => Promise<void>;
   rejectCall: () => void;
   hangupCall: () => void;
+  startScreenShare: () => Promise<void>;
+  stopScreenShare: () => Promise<void>;
   setMicEnabled: (enabled: boolean) => void;
   close: () => void;
 }
@@ -520,6 +572,9 @@ export function startConversation(
     addLocalAudio: stream => peer?.addLocalAudio(stream),
     removeLocalAudio: () => peer?.removeLocalAudio(),
     renegotiate: () => peer?.renegotiate() ?? Promise.resolve(),
+    setScreenTrack: t => peer?.setScreenTrack(t),
+    prepareRecvVideo: () => peer?.prepareRecvVideo(),
+    clearScreenTrack: () => peer?.clearScreenTrack(),
     callbacks,
   });
 
@@ -637,6 +692,8 @@ export function startConversation(
     acceptCall: () => conv.acceptCall(),
     rejectCall: () => conv.rejectCall(),
     hangupCall: () => conv.hangupCall(),
+    startScreenShare: () => conv.startScreenShare(),
+    stopScreenShare: () => conv.stopScreenShare(),
     setMicEnabled: e => peer?.setMicEnabled(e),
     close: teardown,
   };

@@ -4,6 +4,7 @@ import type { FileEntry } from '@peerlink/protocol';
 
 import type { CallDir, CallRecord, CallState } from '../core/call-session';
 import type { Connection, TextItem } from '../core/conversation';
+import type { ScreenState } from '../core/screen-share';
 
 export type FileStatus =
   | 'awaiting-accept'
@@ -51,6 +52,7 @@ export interface CallUiState {
   /** 最近一次主叫失败/对端拒绝原因，用于 toast 后清空。 */
   error?: string;
   muted: boolean;
+  screen: ScreenState;
 }
 
 export interface Session {
@@ -103,6 +105,7 @@ interface RoomsState {
   setCallState(id: string, state: CallState, dir: CallDir | null): void;
   setCallError(id: string, error: string | undefined): void;
   setCallMuted(id: string, muted: boolean): void;
+  setScreenState(id: string, screen: ScreenState): void;
   appendCallRecord(id: string, record: CallRecord): void;
   reset(): void;
 }
@@ -164,7 +167,7 @@ export const useRoomsStore = create<RoomsState>(set => ({
           connection: 'connecting',
           items: [],
           unread: 0,
-          call: { state: 'idle', dir: null, muted: false },
+          call: { state: 'idle', dir: null, muted: false, screen: 'none' },
         },
       },
       order: state.order.includes(id) ? state.order : [...state.order, id],
@@ -355,6 +358,14 @@ export const useRoomsStore = create<RoomsState>(set => ({
       patchSession(s, id, sess => ({
         ...sess,
         call: { ...sess.call, muted },
+      }))
+    ),
+
+  setScreenState: (id, screen) =>
+    set(s =>
+      patchSession(s, id, sess => ({
+        ...sess,
+        call: { ...sess.call, screen },
       }))
     ),
 

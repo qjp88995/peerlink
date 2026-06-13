@@ -140,4 +140,19 @@ describe('controlMessageSchema', () => {
       })
     ).toThrow();
   });
+
+  it('accepts screen-start / screen-stop with callId', () => {
+    expect(
+      controlMessageSchema.parse({ type: 'screen-start', callId: 7 })
+    ).toEqual({ type: 'screen-start', callId: 7 });
+    expect(
+      controlMessageSchema.parse({ type: 'screen-stop', callId: 7 })
+    ).toEqual({ type: 'screen-stop', callId: 7 });
+  });
+
+  it('requires callId on screen-start', () => {
+    expect(() =>
+      controlMessageSchema.parse({ type: 'screen-start' })
+    ).toThrow();
+  });
 });

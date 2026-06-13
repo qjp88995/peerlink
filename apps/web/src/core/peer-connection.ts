@@ -17,6 +17,7 @@ export class PeerConnection {
   private pc: RTCPeerConnection;
   private dc?: RTCDataChannel;
   private localSenders: RTCRtpSender[] = [];
+  private videoTransceiver?: RTCRtpTransceiver;
 
   constructor(private opts: PeerConnectionOptions) {
     const create = opts.createPc ?? (cfg => new RTCPeerConnection(cfg));
@@ -83,6 +84,34 @@ export class PeerConnection {
     for (const sender of this.localSenders) {
       if (sender.track) sender.track.enabled = enabled;
     }
+  }
+
+  private ensureVideoTransceiver(): RTCRtpTransceiver {
+    if (!this.videoTransceiver) {
+      this.videoTransceiver = this.pc.addTransceiver('video', {
+        direction: 'inactive',
+      });
+    }
+    return this.videoTransceiver;
+  }
+
+  /** 我开始演示：挂上屏幕视频轨，方向 sendonly。 */
+  setScreenTrack(track: MediaStreamTrack): void {
+    const tr = this.ensureVideoTransceiver();
+    void tr.sender.replaceTrack(track);
+    tr.direction = 'sendonly';
+  }
+
+  /** 对方要演示前（仅原始 initiator 调）：预置 recvonly 收口。 */
+  prepareRecvVideo(): void {
+    this.ensureVideoTransceiver().direction = 'recvonly';
+  }
+
+  /** 停止演示（任意一方）：卸轨，方向 inactive（保留同一条 m-line 复用）。 */
+  clearScreenTrack(): void {
+    if (!this.videoTransceiver) return;
+    void this.videoTransceiver.sender.replaceTrack(null);
+    this.videoTransceiver.direction = 'inactive';
   }
 
   /** 仅由原始 initiator 调用：发起一轮新的 offer/answer 协商。 */

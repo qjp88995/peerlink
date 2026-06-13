@@ -84,6 +84,9 @@ function callDeps() {
     renegotiate: () => Promise.resolve(),
     addLocalAudio: () => {},
     removeLocalAudio: () => {},
+    setScreenTrack: () => {},
+    prepareRecvVideo: () => {},
+    clearScreenTrack: () => {},
   };
 }
 
@@ -409,5 +412,64 @@ describe('Conversation — voice', () => {
     );
     conv.closeRemote();
     expect(failed).toBe('v3');
+  });
+});
+
+describe('Conversation — screen share', () => {
+  it('routes screen-start to screen share (initiator prepares + renegotiates)', async () => {
+    const prepareRecvVideo = vi.fn();
+    const renegotiate = vi.fn(() => Promise.resolve());
+    const conv = new Conversation({
+      ...callDeps(),
+      isInitiator: true,
+      renegotiate,
+      prepareRecvVideo,
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'screen-start', callId: 1 })
+    );
+    expect(prepareRecvVideo).toHaveBeenCalledTimes(1);
+    expect(renegotiate).toHaveBeenCalledTimes(1);
+  });
+
+  it('splits remote video tracks to onRemoteScreenTrack, not audio', () => {
+    const onRemoteScreenTrack = vi.fn();
+    const onRemoteAudioTrack = vi.fn();
+    const conv = new Conversation({
+      ...callDeps(),
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: { onRemoteScreenTrack, onRemoteAudioTrack },
+    });
+    conv.handleRemoteTrack({ kind: 'video' } as MediaStreamTrack);
+    expect(onRemoteScreenTrack).toHaveBeenCalledTimes(1);
+    expect(onRemoteAudioTrack).not.toHaveBeenCalled();
+  });
+
+  it('disposes screen share when the call ends', async () => {
+    const clearScreenTrack = vi.fn();
+    const conv = new Conversation({
+      ...callDeps(),
+      isInitiator: false,
+      clearScreenTrack,
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    // 对端开始共享 -> 屏幕进入 remote 态
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'screen-start', callId: 5 })
+    );
+    // 有一通会议在响铃，然后被结束（无需麦克风即可走到 idle）
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'call-invite', callId: 5, ts: 1 })
+    );
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'call-end', callId: 5, reason: 'hangup' })
+    );
+    expect(clearScreenTrack).toHaveBeenCalled();
   });
 });

@@ -129,3 +129,57 @@ describe('PeerConnection media', () => {
     expect(track.enabled).toBe(false);
   });
 });
+
+function pcWithTransceiver() {
+  const sender = { replaceTrack: vi.fn(async () => {}) };
+  const transceiver = {
+    sender,
+    direction: 'inactive' as RTCRtpTransceiverDirection,
+  };
+  return {
+    base: {
+      createDataChannel: vi.fn(() => ({
+        binaryType: '',
+        addEventListener: vi.fn(),
+      })),
+      createOffer: vi.fn(async () => ({ type: 'offer', sdp: 'O' })),
+      setLocalDescription: vi.fn(async () => {}),
+      setRemoteDescription: vi.fn(async () => {}),
+      addIceCandidate: vi.fn(async () => {}),
+      addTransceiver: vi.fn(() => transceiver),
+      close: vi.fn(),
+      addEventListener: vi.fn(),
+    },
+    transceiver,
+    sender,
+  };
+}
+
+describe('PeerConnection screen video', () => {
+  it('setScreenTrack reuses one transceiver, attaches track, sendonly', () => {
+    const { base, transceiver, sender } = pcWithTransceiver();
+    const conn = new PeerConnection({
+      iceServers: [],
+      createPc: () => base as unknown as RTCPeerConnection,
+    });
+    const track = { kind: 'video' } as MediaStreamTrack;
+    conn.setScreenTrack(track);
+    conn.setScreenTrack(track); // 第二次复用同一 transceiver
+    expect(base.addTransceiver).toHaveBeenCalledTimes(1);
+    expect(sender.replaceTrack).toHaveBeenLastCalledWith(track);
+    expect(transceiver.direction).toBe('sendonly');
+  });
+
+  it('prepareRecvVideo sets recvonly; clearScreenTrack clears + inactive', () => {
+    const { base, transceiver, sender } = pcWithTransceiver();
+    const conn = new PeerConnection({
+      iceServers: [],
+      createPc: () => base as unknown as RTCPeerConnection,
+    });
+    conn.prepareRecvVideo();
+    expect(transceiver.direction).toBe('recvonly');
+    conn.clearScreenTrack();
+    expect(sender.replaceTrack).toHaveBeenLastCalledWith(null);
+    expect(transceiver.direction).toBe('inactive');
+  });
+});

@@ -67,6 +67,11 @@ export class CallSession {
 
   constructor(private d: CallSessionDeps) {}
 
+  /** 当前会议的 callId；idle 时为 null。供屏幕共享绑定。 */
+  currentCallId(): number | null {
+    return this.callId;
+  }
+
   // ---- 本端动作 ----
 
   async dial(): Promise<void> {

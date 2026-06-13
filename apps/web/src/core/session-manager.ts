@@ -9,6 +9,7 @@ import {
   type TextItem,
 } from './conversation';
 import { type RingKind, Ringtone } from './ringtone';
+import type { ScreenState } from './screen-share';
 
 export interface SessionStore {
   addSession(id: string, roomId: string | null): void;
@@ -52,6 +53,7 @@ export interface SessionStore {
   setCallState(id: string, state: CallState, dir: CallDir | null): void;
   setCallError(id: string, error: string | undefined): void;
   setCallMuted(id: string, muted: boolean): void;
+  setScreenState(id: string, screen: ScreenState): void;
   appendCallRecord(id: string, record: CallRecord): void;
 }
 
@@ -67,6 +69,8 @@ export class SessionManager {
   private handles = new Map<string, ConversationHandle>();
   private rooms = new Map<string, string>();
   private audioEls = new Map<string, HTMLAudioElement>();
+  private localScreens = new Map<string, MediaStream>();
+  private remoteScreens = new Map<string, MediaStream>();
   private ringtone = new Ringtone();
   private ringingId: string | null = null;
   private store: SessionStore;
@@ -186,6 +190,19 @@ export class SessionManager {
     this.store.setCallMuted(id, muted);
   }
 
+  startScreenShare(id: string): void {
+    void this.handles.get(id)?.startScreenShare();
+  }
+
+  stopScreenShare(id: string): void {
+    void this.handles.get(id)?.stopScreenShare();
+  }
+
+  /** 当前应展示的屏幕流：本端演示给本地预览，对端演示给远端画面。 */
+  getScreenStream(id: string): MediaStream | null {
+    return this.localScreens.get(id) ?? this.remoteScreens.get(id) ?? null;
+  }
+
   private playRemote(id: string, track: MediaStreamTrack): void {
     let el = this.audioEls.get(id);
     if (!el) {
@@ -202,6 +219,15 @@ export class SessionManager {
     if (el) {
       el.srcObject = null;
       this.audioEls.delete(id);
+    }
+  }
+
+  private clearScreens(id: string): void {
+    this.localScreens.delete(id);
+    const rs = this.remoteScreens.get(id);
+    if (rs) {
+      for (const t of rs.getTracks()) t.stop();
+      this.remoteScreens.delete(id);
     }
   }
 
@@ -237,6 +263,8 @@ export class SessionManager {
   closeAll(): void {
     for (const handle of this.handles.values()) handle.close();
     for (const id of [...this.audioEls.keys()]) this.stopRemote(id);
+    for (const id of [...this.remoteScreens.keys()]) this.clearScreens(id);
+    this.localScreens.clear();
     this.ringingId = null;
     this.ringtone.dispose();
     this.handles.clear();
@@ -280,11 +308,29 @@ export class SessionManager {
       onCallStateChange: (state, dir) => {
         this.store.setCallState(id, state, dir);
         this.updateRing(id, state, dir);
-        if (state === 'idle') this.stopRemote(id);
+        if (state === 'idle') {
+          this.stopRemote(id);
+          this.store.setScreenState(id, 'none');
+          this.clearScreens(id);
+        }
       },
       onCallError: reason => this.store.setCallError(id, reason),
       onCallEnded: record => this.store.appendCallRecord(id, record),
       onRemoteAudioTrack: track => this.playRemote(id, track),
+      onScreenStateChange: state => {
+        this.store.setScreenState(id, state);
+        if (state === 'none') this.clearScreens(id);
+      },
+      onLocalScreenStream: stream => {
+        if (stream) this.localScreens.set(id, stream);
+        else this.localScreens.delete(id);
+      },
+      onRemoteScreenTrack: track => {
+        this.remoteScreens.set(id, new MediaStream([track]));
+      },
+      onScreenError: () => {
+        // 共享失败（取消/无权限）：状态由模块回到 none，此处可选 toast。
+      },
     };
   }
 }
