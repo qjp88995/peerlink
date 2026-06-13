@@ -196,16 +196,16 @@ export function Composer({
 
   // 文件 / 文件夹 / 会议 收进「＋」弹出面板（手机端与桌面端共用）。
   const plusPanel = showPlus && (
-    <div className="grid grid-cols-4 gap-x-3 gap-y-4 px-3 pt-3 pb-1">
+    <div className="flex flex-wrap gap-2 px-3 pt-3 pb-1">
       <button
         type="button"
         disabled={disabled}
         onClick={openFile}
         aria-label="发送文件"
-        className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+        className="flex w-16 flex-col items-center gap-1.5 disabled:opacity-50"
       >
-        <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
-          <Paperclip className="size-6" />
+        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg">
+          <Paperclip className="size-5" />
         </span>
         <span className="text-xs text-fg-muted">文件</span>
       </button>
@@ -214,10 +214,10 @@ export function Composer({
         disabled={disabled}
         onClick={openFolder}
         aria-label="发送文件夹"
-        className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+        className="flex w-16 flex-col items-center gap-1.5 disabled:opacity-50"
       >
-        <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
-          <Folder className="size-6" />
+        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg">
+          <Folder className="size-5" />
         </span>
         <span className="text-xs text-fg-muted">文件夹</span>
       </button>
@@ -229,10 +229,10 @@ export function Composer({
           onDial();
         }}
         aria-label="开会议"
-        className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+        className="flex w-16 flex-col items-center gap-1.5 disabled:opacity-50"
       >
-        <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
-          <PhoneCall className="size-6" />
+        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg">
+          <PhoneCall className="size-5" />
         </span>
         <span className="text-xs text-fg-muted">会议</span>
       </button>
