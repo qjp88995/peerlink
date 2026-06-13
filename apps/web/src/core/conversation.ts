@@ -173,7 +173,11 @@ export class Conversation {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: h => clearTimeout(h as ReturnType<typeof setTimeout>),
       callbacks: {
-        onStateChange: (s, d) => this.cb.onCallStateChange?.(s, d),
+        onStateChange: (s, d) => {
+          // 挂断/结束会议时一并收尾屏幕共享：停本地采集、清轨、复位。
+          if (s === 'idle') this.screen.dispose();
+          this.cb.onCallStateChange?.(s, d);
+        },
         onIncoming: () => this.cb.onCallIncoming?.(),
         onError: r => this.cb.onCallError?.(r),
         onEnded: r => this.cb.onCallEnded?.(r),

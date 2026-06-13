@@ -155,4 +155,23 @@ describe('ScreenShare', () => {
     expect(calls.setScreenTrack).not.toHaveBeenCalled();
     expect(ss.state).toBe('none');
   });
+
+  it('dispose while local: stops track, clears, resets — without sending control', async () => {
+    const { ss, calls, track } = setup({ isInitiator: true });
+    await ss.start();
+    calls.sendControl.mockClear();
+    ss.dispose();
+    expect(track.stop).toHaveBeenCalled();
+    expect(calls.clearScreenTrack).toHaveBeenCalled();
+    expect(calls.onLocalStream).toHaveBeenLastCalledWith(null);
+    expect(calls.sendControl).not.toHaveBeenCalled();
+    expect(ss.state).toBe('none');
+  });
+
+  it('dispose while none: no-op', () => {
+    const { ss, calls } = setup();
+    ss.dispose();
+    expect(calls.clearScreenTrack).not.toHaveBeenCalled();
+    expect(ss.state).toBe('none');
+  });
 });

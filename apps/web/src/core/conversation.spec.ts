@@ -448,4 +448,28 @@ describe('Conversation — screen share', () => {
     expect(onRemoteScreenTrack).toHaveBeenCalledTimes(1);
     expect(onRemoteAudioTrack).not.toHaveBeenCalled();
   });
+
+  it('disposes screen share when the call ends', async () => {
+    const clearScreenTrack = vi.fn();
+    const conv = new Conversation({
+      ...callDeps(),
+      isInitiator: false,
+      clearScreenTrack,
+      channel: new RecordingChannel(),
+      makeWriter: async () => mockWriter().writer,
+      callbacks: {},
+    });
+    // 对端开始共享 -> 屏幕进入 remote 态
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'screen-start', callId: 5 })
+    );
+    // 有一通会议在响铃，然后被结束（无需麦克风即可走到 idle）
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'call-invite', callId: 5, ts: 1 })
+    );
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'call-end', callId: 5, reason: 'hangup' })
+    );
+    expect(clearScreenTrack).toHaveBeenCalled();
+  });
 });
