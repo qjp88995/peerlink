@@ -589,18 +589,46 @@ export function startConversation(
       graceTimer = undefined;
     }
   }
+  // 进入自愈宽限：ICE 暂时断开或对端刷新离开后，等待其自愈/重新加入，
+  // 超时仍未恢复才真正收尾。dedup：宽限进行中重复调用无副作用。
+  function startGrace() {
+    if (torndown || graceTimer !== undefined) return;
+    callbacks.onConnection?.('reconnecting');
+    graceTimer = setTimeout(() => {
+      graceTimer = undefined;
+      conv.closeRemote();
+      teardown();
+    }, GRACE_MS);
+  }
+
+  // 连接代际：对端刷新/重连会重建 peer。每条 peer 持有自己的 myGen，
+  // 所有事件回调先校验仍是当前代——被新连接取代的孤儿 peer（旧的
+  // RTCPeerConnection）的 disconnected/failed/closed 事件一律忽略，
+  // 否则它会污染共享的 grace/teardown/通话状态，把好端端的新连接和
+  // 信令一起拆掉。
+  let gen = 0;
 
   function buildPeer(onSignal: (p: object) => void) {
+    const myGen = ++gen;
+    const current = () => myGen === gen && !torndown;
     return new PeerConnection({
       iceServers: iceServersFromEnv(),
-      onSignal,
+      onSignal: payload => {
+        if (current()) onSignal(payload);
+      },
       onChannelOpen: dc => {
+        if (!current()) return;
         conv.setChannel(rtcSendChannel(dc));
         callbacks.onConnection?.('connected');
       },
-      onMessage: bytes => void conv.handleIncoming(bytes),
-      onRemoteTrack: track => conv.handleRemoteTrack(track),
+      onMessage: bytes => {
+        if (current()) void conv.handleIncoming(bytes);
+      },
+      onRemoteTrack: track => {
+        if (current()) conv.handleRemoteTrack(track);
+      },
       onStateChange: state => {
+        if (!current()) return;
         conv.notifyConnectionState(state);
         // connected/completed：仅当处于宽限期时视为自愈成功，恢复 UI。
         if (state === 'connected' || state === 'completed') {
@@ -612,13 +640,7 @@ export function startConversation(
         }
         // disconnected：非终态，给宽限期等待自愈，不立即 teardown。
         if (state === 'disconnected') {
-          if (torndown || graceTimer !== undefined) return;
-          callbacks.onConnection?.('reconnecting');
-          graceTimer = setTimeout(() => {
-            graceTimer = undefined;
-            conv.closeRemote();
-            teardown();
-          }, GRACE_MS);
+          startGrace();
           return;
         }
         // failed/closed：终态，立即关闭。
@@ -652,11 +674,19 @@ export function startConversation(
     sig.on('open', () => sig.createRoom());
     sig.on('room-created', roomId => callbacks.onRoom?.(roomId));
     sig.on('peer-joined', async peerId => {
+      // 对端加入（可能是刷新后重新加入的同一用户）：重建连接。
+      // 先清宽限、关闭旧 peer——旧 peer 的事件已因代际失效被忽略，
+      // 其 close() 触发的 closed 事件不会误拆新连接。
       targetPeerId = peerId;
       callbacks.onConnection?.('connecting');
+      clearGraceTimer();
+      const previous = peer;
       peer = buildPeer(send);
+      previous?.close();
       await peer.startAsInitiator();
     });
+    // 对端离开（如刷新页面）：进入宽限等待其重新加入，超时才收尾。
+    sig.on('peer-left', () => startGrace());
     sig.on('signal', async (_from, payload) => {
       const p = payload as { sdp?: string; candidate?: RTCIceCandidateInit };
       if (p.sdp) await peer?.acceptAnswer(p.sdp);
@@ -664,6 +694,8 @@ export function startConversation(
     });
   } else {
     sig.on('open', () => sig.joinRoom(init.roomId));
+    // 对端离开（如刷新页面）：进入宽限等待其重连，超时才收尾。
+    sig.on('peer-left', () => startGrace());
     sig.on('signal', async (from, payload) => {
       targetPeerId = from;
       const p = payload as { sdp?: string; candidate?: RTCIceCandidateInit };
