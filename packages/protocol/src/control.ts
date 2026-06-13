@@ -91,6 +91,15 @@ const callEnd = z.object({
   reason: callEndReasonSchema,
 });
 
+const screenStart = z.object({
+  type: z.literal('screen-start'),
+  callId: z.number().int().nonnegative(),
+});
+const screenStop = z.object({
+  type: z.literal('screen-stop'),
+  callId: z.number().int().nonnegative(),
+});
+
 export const controlMessageSchema = z.discriminatedUnion('type', [
   chat,
   manifest,
@@ -105,5 +114,7 @@ export const controlMessageSchema = z.discriminatedUnion('type', [
   callAccept,
   callReject,
   callEnd,
+  screenStart,
+  screenStop,
 ]);
 export type ControlMessage = z.infer<typeof controlMessageSchema>;
