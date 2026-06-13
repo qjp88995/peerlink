@@ -223,13 +223,13 @@ export class SessionManager {
     }
   }
 
+  /**
+   * 通话结束时清屏幕流引用。不 stop 任何轨：本端采集轨由 ScreenShare 负责停，
+   * 远端接收轨由 PeerConnection 持有（stop 会永久 ended，破坏二次共享）。
+   */
   private clearScreens(id: string): void {
     this.localScreens.delete(id);
-    const rs = this.remoteScreens.get(id);
-    if (rs) {
-      for (const t of rs.getTracks()) t.stop();
-      this.remoteScreens.delete(id);
-    }
+    this.remoteScreens.delete(id);
   }
 
   // 来电(ringing/in) 播来电铃，拨号(dialing) 播回铃；接通/结束停。
@@ -320,7 +320,9 @@ export class SessionManager {
       onRemoteAudioTrack: track => this.playRemote(id, track),
       onScreenStateChange: state => {
         this.store.setScreenState(id, state);
-        if (state === 'none') this.clearScreens(id);
+        // 共享停止：仅释放本端引用。远端接收轨跨重协商复用、二次共享时不会
+        // 再触发 'track'，故保留 remoteScreens，让再次共享能重新绑定同一条轨。
+        if (state === 'none') this.localScreens.delete(id);
       },
       onLocalScreenStream: stream => {
         if (stream) this.localScreens.set(id, stream);

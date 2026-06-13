@@ -147,7 +147,9 @@ export function CallPanel({
     // 显式 play：挂载后才赋 srcObject 时 autoPlay 属性不总触发；
     // 忽略 AbortError（连续赋值打断）/ 自动播放拦截，有帧/手势后会自行恢复。
     if (screenStream) void el.play().catch(() => {});
-  }, [screenStream]);
+    // 依赖含 call.screen：二次共享时流引用不变，但 screen 变回 remote、
+    // video 重新挂载，需重新绑定到（仍存活的）同一条接收轨。
+  }, [screenStream, call.screen]);
 
   if (call.state === 'idle' || call.state === 'ringing') return null;
 
