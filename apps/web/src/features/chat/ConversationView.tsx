@@ -16,11 +16,11 @@ import { IncomingCallPrompt } from './IncomingCallPrompt';
 import { Timeline } from './Timeline';
 
 const CALL_ERROR_TEXT: Record<string, string> = {
-  unsupported: '对方设备不支持语音通话',
+  unsupported: '对方设备不支持会议',
   'no-mic': '对方无可用麦克风',
   'permission-denied': '对方拒绝了麦克风权限',
-  declined: '对方拒绝接听',
-  busy: '对方正在通话中',
+  declined: '对方拒绝了邀请',
+  busy: '对方正在会议中',
 };
 
 function MobileHeader({ session }: { session: Session }) {
@@ -54,7 +54,7 @@ export function ConversationView({ className }: { className?: string }) {
 
   useEffect(() => {
     if (!activeId || !callError) return;
-    toast.error(CALL_ERROR_TEXT[callError] ?? '通话失败');
+    toast.error(CALL_ERROR_TEXT[callError] ?? '会议连接失败');
     useRoomsStore.getState().setCallError(activeId, undefined);
   }, [activeId, callError]);
 
@@ -110,9 +110,15 @@ export function ConversationView({ className }: { className?: string }) {
       )}
       <CallPanel
         call={session.call}
+        screenStream={sessionManager.getScreenStream(activeId)}
         onHangup={() => sessionManager.hangupCall(activeId)}
         onToggleMute={() =>
           sessionManager.toggleMute(activeId, !session.call.muted)
+        }
+        onToggleScreen={() =>
+          session.call.screen === 'local'
+            ? sessionManager.stopScreenShare(activeId)
+            : sessionManager.startScreenShare(activeId)
         }
       />
       <Timeline

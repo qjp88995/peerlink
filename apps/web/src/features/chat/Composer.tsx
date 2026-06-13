@@ -231,13 +231,13 @@ export function Composer({
                 setShowPlus(false);
                 onDial();
               }}
-              aria-label="语音通话"
+              aria-label="开会议"
               className="flex flex-col items-center gap-1.5 disabled:opacity-50"
             >
               <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
                 <PhoneCall className="size-6" />
               </span>
-              <span className="text-xs text-fg-muted">通话</span>
+              <span className="text-xs text-fg-muted">会议</span>
             </button>
           </div>
         )}
@@ -309,7 +309,7 @@ export function Composer({
         variant="ghost"
         disabled={disabled || callBusy}
         onClick={onDial}
-        aria-label="语音通话"
+        aria-label="开会议"
       >
         <PhoneCall className="size-4" />
       </Button>
