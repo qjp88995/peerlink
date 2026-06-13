@@ -21,6 +21,13 @@ const TEXT: Partial<Record<CallUiState['state'], string>> = {
   reconnecting: '重连中…',
 };
 
+// 屏幕共享依赖 getDisplayMedia——移动端浏览器（iOS 全系、Android Chrome/Firefox）
+// 均不支持，非安全上下文下整个 mediaDevices 也可能缺失。不支持则不渲染共享按钮，
+// 避免用户点了只会报错。
+const CAN_SHARE_SCREEN =
+  typeof navigator !== 'undefined' &&
+  typeof navigator.mediaDevices?.getDisplayMedia === 'function';
+
 // 声波各柱的初相位（负 delay 让动画一上来就错峰，呈现起伏而非整齐划一）。
 const WAVE_DELAYS = [
   -900, -200, -500, -700, -100, -400, -800, -300, -600, -150, -550, -250,
@@ -174,22 +181,23 @@ export function CallPanel({
     </CtrlButton>
   );
 
-  const screenBtn = (dock?: boolean) => (
-    <CtrlButton
-      onClick={onToggleScreen}
-      disabled={!active || peerSharing}
-      active={sharing}
-      dock={dock}
-      label={peerSharing ? '对方正在共享' : sharing ? '停止共享' : '共享屏幕'}
-      title={peerSharing ? '对方正在共享' : undefined}
-    >
-      {sharing ? (
-        <MonitorX className="size-4.5" />
-      ) : (
-        <MonitorUp className="size-4.5" />
-      )}
-    </CtrlButton>
-  );
+  const screenBtn = (dock?: boolean) =>
+    CAN_SHARE_SCREEN ? (
+      <CtrlButton
+        onClick={onToggleScreen}
+        disabled={!active || peerSharing}
+        active={sharing}
+        dock={dock}
+        label={peerSharing ? '对方正在共享' : sharing ? '停止共享' : '共享屏幕'}
+        title={peerSharing ? '对方正在共享' : undefined}
+      >
+        {sharing ? (
+          <MonitorX className="size-4.5" />
+        ) : (
+          <MonitorUp className="size-4.5" />
+        )}
+      </CtrlButton>
+    ) : null;
 
   const hangupBtn = (dock?: boolean) => (
     <CtrlButton onClick={onHangup} danger dock={dock} label="挂断">
