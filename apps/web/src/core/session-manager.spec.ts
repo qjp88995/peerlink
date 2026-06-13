@@ -48,6 +48,8 @@ function fakeHandle(
     acceptCall: () => Promise.resolve(),
     rejectCall: () => {},
     hangupCall: () => {},
+    startScreenShare: () => Promise.resolve(),
+    stopScreenShare: () => Promise.resolve(),
     setMicEnabled: () => {},
     close: () => {},
     ...over,
