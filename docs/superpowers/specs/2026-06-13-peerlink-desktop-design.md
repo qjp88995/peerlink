@@ -126,11 +126,11 @@ Web 端新增轻量设置面板（改信令域名 + ICE/TURN），**仅在桌面
 
 ### 打包：electron-builder
 
-| 平台    | 格式        | 备注                          |
-| ------- | ----------- | ----------------------------- |
-| Windows | NSIS `.exe` | 默认每用户安装，免管理员权限  |
-| macOS   | `.dmg`      | universal 或先只出 arm64      |
-| Linux   | `.AppImage` | 免安装双击即跑；可选附 `.deb` |
+| 平台    | 格式                 | 备注                                             |
+| ------- | -------------------- | ------------------------------------------------ |
+| Windows | NSIS `.exe`          | 默认每用户安装，免管理员权限                     |
+| macOS   | `.dmg`               | universal（Intel + Apple Silicon）               |
+| Linux   | `.AppImage` + `.deb` | AppImage 免安装双击即跑；deb 供 Debian/Ubuntu 系 |
 
 ### 构建流水线
 
