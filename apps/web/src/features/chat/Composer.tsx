@@ -194,53 +194,56 @@ export function Composer({
     />
   );
 
+  // 文件 / 文件夹 / 会议 收进「＋」弹出面板（手机端与桌面端共用）。
+  const plusPanel = showPlus && (
+    <div className="grid grid-cols-4 gap-x-3 gap-y-4 px-3 pt-3 pb-1">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={openFile}
+        aria-label="发送文件"
+        className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+      >
+        <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
+          <Paperclip className="size-6" />
+        </span>
+        <span className="text-xs text-fg-muted">文件</span>
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={openFolder}
+        aria-label="发送文件夹"
+        className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+      >
+        <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
+          <Folder className="size-6" />
+        </span>
+        <span className="text-xs text-fg-muted">文件夹</span>
+      </button>
+      <button
+        type="button"
+        disabled={disabled || callBusy}
+        onClick={() => {
+          setShowPlus(false);
+          onDial();
+        }}
+        aria-label="开会议"
+        className="flex flex-col items-center gap-1.5 disabled:opacity-50"
+      >
+        <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
+          <PhoneCall className="size-6" />
+        </span>
+        <span className="text-xs text-fg-muted">会议</span>
+      </button>
+    </div>
+  );
+
   // 手机端布局：[语音切换][输入框 / 按住说话][发送 或 ＋]，媒体在 ＋ 面板里。
   if (coarse) {
     return (
       <div className="border-t border-line bg-surface">
-        {showPlus && (
-          <div className="grid grid-cols-4 gap-x-3 gap-y-4 px-3 pb-1 pt-3">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={openFile}
-              aria-label="发送文件"
-              className="flex flex-col items-center gap-1.5 disabled:opacity-50"
-            >
-              <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
-                <Paperclip className="size-6" />
-              </span>
-              <span className="text-xs text-fg-muted">文件</span>
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={openFolder}
-              aria-label="发送文件夹"
-              className="flex flex-col items-center gap-1.5 disabled:opacity-50"
-            >
-              <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
-                <Folder className="size-6" />
-              </span>
-              <span className="text-xs text-fg-muted">文件夹</span>
-            </button>
-            <button
-              type="button"
-              disabled={disabled || callBusy}
-              onClick={() => {
-                setShowPlus(false);
-                onDial();
-              }}
-              aria-label="开会议"
-              className="flex flex-col items-center gap-1.5 disabled:opacity-50"
-            >
-              <span className="flex size-14 items-center justify-center rounded-xl bg-surface-2 text-fg">
-                <PhoneCall className="size-6" />
-              </span>
-              <span className="text-xs text-fg-muted">会议</span>
-            </button>
-          </div>
-        )}
+        {plusPanel}
         <div className="flex items-end gap-2 px-3 py-3">
           {hiddenInputs}
           {supported && (
@@ -285,50 +288,37 @@ export function Composer({
     );
   }
 
-  // 桌面端布局：文件/文件夹内联，空输入时显示麦克风，有文字时显示发送。
+  // 桌面端布局：文件/文件夹/会议 收进「＋」面板，对齐手机端、避免窄栏挤压输入框。
   return (
-    <div className="flex items-end gap-2 border-t border-line bg-surface px-3 py-3">
-      {hiddenInputs}
-      <Button
-        variant="ghost"
-        disabled={disabled}
-        onClick={openFile}
-        aria-label="发送文件"
-      >
-        <Paperclip className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        disabled={disabled}
-        onClick={openFolder}
-        aria-label="发送文件夹"
-      >
-        <Folder className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        disabled={disabled || callBusy}
-        onClick={onDial}
-        aria-label="开会议"
-      >
-        <PhoneCall className="size-4" />
-      </Button>
-      {middle}
-      {showDesktopMic && (
+    <div className="border-t border-line bg-surface">
+      {plusPanel}
+      <div className="flex items-end gap-2 px-3 py-3">
+        {hiddenInputs}
         <Button
           variant="ghost"
           disabled={disabled}
-          aria-label="录音"
-          onClick={() => void start()}
+          aria-label={showPlus ? '收起' : '更多'}
+          onClick={() => setShowPlus(v => !v)}
         >
-          <Mic className="size-4" />
+          {showPlus ? <X className="size-4" /> : <Plus className="size-4" />}
         </Button>
-      )}
-      {text.trim().length > 0 && (
-        <Button disabled={disabled} onClick={submit} aria-label="发送">
-          <Send className="size-4" />
-        </Button>
-      )}
+        {middle}
+        {showDesktopMic && (
+          <Button
+            variant="ghost"
+            disabled={disabled}
+            aria-label="录音"
+            onClick={() => void start()}
+          >
+            <Mic className="size-4" />
+          </Button>
+        )}
+        {text.trim().length > 0 && (
+          <Button disabled={disabled} onClick={submit} aria-label="发送">
+            <Send className="size-4" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
