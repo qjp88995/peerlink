@@ -1,11 +1,12 @@
 # PeerLink
 
-基于 **WebRTC** 的点对点（P2P）即时通讯 + 文件传输系统。文字、语音、文件与实时通话音频在两台设备的浏览器间**直传，不经过服务器**——服务器只做撮合（交换 SDP/ICE、局域网分组），看不到任何内容。
+基于 **WebRTC** 的点对点（P2P）即时通讯 + 文件传输系统。文字、语音、文件、实时通话音频与屏幕共享画面在两台设备的浏览器间**直传，不经过服务器**——服务器只做撮合（交换 SDP/ICE、局域网分组），看不到任何内容。
 
 - **多会话 IM（并行多房间）**：左侧常驻会话列表（Inbox），右侧当前会话详情，像微信/Telegram 那样同时维护多条彼此独立的一对一会话（**非群聊**）。一个联系人 = 一条独立的 P2P 房间，互不串扰。
 - **统一时间线**：每条会话内，文字、语音消息、文件、通话记录同处一条时间线，以消息气泡呈现；纯会话内存，刷新即清空整个列表（阅后即焚）。
 - **语音消息**：录完即发的异步音频，走 DataChannel 当文件分片传，CRC32 校验，微信式气泡点按播放。
 - **实时语音通话**：电话式振铃，一方拨打、另一方接听后双向音频经 WebRTC 音频轨实时传输（含静音、计时、连接状态指示、挂断；结束后时间线留记录）。
+- **1v1 会议 + 屏幕共享**：通话中任一方可共享屏幕，画面经 WebRTC 视频轨直传；共享时切到会议布局（中央画面舞台 + 可折叠聊天侧栏），一次一个演示者，对端可继续收发文字。仅桌面浏览器（`getDisplayMedia`）支持，移动端自动隐藏入口。
 - **文件确认握手**：对端发文件先出「接收 / 拒绝」气泡，确认后才开始 P2P 直传，气泡内显示进度。
 - **同局域网自动发现**：连上即可看到同一出口网络下的在线设备，点选直接发起（类 Snapdrop）。
 - **跨网络配对**：通过 链接 / 二维码 / 短口令（`4 位数字 + 中文词`，如 `8423-河马`）配对（类 ShareDrop）。
@@ -32,7 +33,7 @@
        不过服务器)
 ```
 
-连接建立后两端**对称**：同一条 DataChannel 上互发文字、语音消息与文件，均 P2P 直传；实时通话音频则单开 WebRTC 音频轨。
+连接建立后两端**对称**：同一条 DataChannel 上互发文字、语音消息与文件，均 P2P 直传；实时通话音频走 WebRTC 音频轨，屏幕共享画面走 WebRTC 视频轨（两者均经信令 `signal` 透传 SDP/ICE 协商，复用同一 PC）。
 
 **多会话 = 并行多房间**：一个 `SessionManager` 持有 N 条彼此隔离的会话，每条会话 = 一个房间 = 一条独立 ws + 一个 `RTCPeerConnection` + 一条 `DataChannel` + 一个 `Conversation` 编排器。因此信令服务与协议层无需感知多会话（DataChannel 仍严格 1-1，`MAX_MEMBERS = 2` 不变）——复杂度全部收敛在前端 state 层与 UI 层。
 
@@ -64,20 +65,21 @@ peerlink/
 
 ### 前端内部分层（`apps/web/src`）
 
-| 层                 | 位置                                                          | 职责                                                                                                                                     |
-| ------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `signaling-client` | `core/signaling-client.ts`                                    | WebSocket 连接与信令收发（zod 校验）                                                                                                     |
-| `peer-connection`  | `core/peer-connection.ts`                                     | 封装 `RTCPeerConnection`、ICE、DataChannel 建立；通话音频轨 `addTrack` + renegotiation + mute（对称收发）                                |
-| `conversation`     | `core/conversation.ts`                                        | 单会话对称编排器：一条 DataChannel 多路复用「多次文件传输 + 文字 + 语音消息 + 通话控制」，按 `transferId`/`fileId`/`msgId`/`callId` 路由 |
-| `session-manager`  | `core/session-manager.ts`                                     | 多会话管理器：持有 N 个 `Conversation` handle，桥接到 store，统一处理来电/振铃                                                           |
-| `call-session`     | `core/call-session.ts`                                        | 单路通话状态机（振铃 / 通话中 / 自愈宽限 / 结束），排他，固定 initiator 端发起 renegotiation 避免 glare                                  |
-| `transfer`         | `core/sender.ts` / `core/receiver.ts`                         | 单次文件分片、背压控制、组装、CRC32 校验（每个 transfer 一实例）                                                                         |
-| `voice`            | `core/voice-recorder.ts` / `core/mic.ts` / `core/ringtone.ts` | 语音消息录制（`MediaRecorder`）、麦克风采集（能力/权限探测）、WebAudio 振铃音                                                            |
-| `storage`          | `core/storage/*`                                              | 接收端写入抽象（File System Access / 内存 Blob，按能力探测；不兼容场景门控拒收）                                                         |
-| `state`            | `state/conversation-store.ts`                                 | zustand 多会话列表 + 每会话统一时间线 `items[]` + 通话状态                                                                               |
-| `ui`               | `features/chat/*` / `routes/*`                                | Inbox（会话列表）/ ConversationView / Timeline / 气泡 / Composer / CallPanel / IncomingCallPrompt + TanStack 文件式路由                  |
+| 层                 | 位置                                                          | 职责                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signaling-client` | `core/signaling-client.ts`                                    | WebSocket 连接与信令收发（zod 校验）                                                                                                                                               |
+| `peer-connection`  | `core/peer-connection.ts`                                     | 封装 `RTCPeerConnection`、ICE、DataChannel 建立；通话音频轨 `addTrack` + renegotiation + mute（对称收发）；可复用的视频 transceiver 供屏幕共享 `prepareSend/RecvVideo`             |
+| `conversation`     | `core/conversation.ts`                                        | 单会话对称编排器：一条 DataChannel 多路复用「多次文件传输 + 文字 + 语音消息 + 通话控制 + 屏幕共享控制」，按 `transferId`/`fileId`/`msgId`/`callId` 路由                            |
+| `session-manager`  | `core/session-manager.ts`                                     | 多会话管理器：持有 N 个 `Conversation` handle，桥接到 store，统一处理来电/振铃；转发屏幕共享 start/stop                                                                            |
+| `call-session`     | `core/call-session.ts`                                        | 单路通话状态机（振铃 / 通话中 / 自愈宽限 / 结束），排他，固定 initiator 端发起 renegotiation 避免 glare                                                                            |
+| `screen-share`     | `core/screen-share.ts`                                        | 屏幕共享状态机（`none`/`local`/`remote`），一次一个演示者，依附通话 `callId`，固定 initiator 端 renegotiation                                                                      |
+| `transfer`         | `core/sender.ts` / `core/receiver.ts`                         | 单次文件分片、背压控制、组装、CRC32 校验（每个 transfer 一实例）                                                                                                                   |
+| `voice`            | `core/voice-recorder.ts` / `core/mic.ts` / `core/ringtone.ts` | 语音消息录制（`MediaRecorder`）、麦克风采集（能力/权限探测 + 回声消除 AEC）、WebAudio 振铃音                                                                                       |
+| `storage`          | `core/storage/*`                                              | 接收端写入抽象（File System Access / 内存 Blob，按能力探测；不兼容场景门控拒收）                                                                                                   |
+| `state`            | `state/conversation-store.ts`                                 | zustand 多会话列表 + 每会话统一时间线 `items[]` + 通话状态 + 屏幕共享状态（`screen` + `screenNonce`）                                                                              |
+| `ui`               | `features/chat/*` / `routes/*`                                | Inbox（会话列表）/ ConversationView / Timeline / 气泡 / Composer / CallPanel（含会议布局 + 屏幕共享 dock）/ CallChatRail（会议聊天侧栏）/ IncomingCallPrompt + TanStack 文件式路由 |
 
-后续 App 可替换 `storage` / `ui`，复用 `protocol` / `conversation` / `session-manager` / `call-session` / `transfer` / `peer-connection` / `signaling-client`。
+后续 App 可替换 `storage` / `ui`，复用 `protocol` / `conversation` / `session-manager` / `call-session` / `screen-share` / `transfer` / `peer-connection` / `signaling-client`。
 
 ---
 
@@ -149,7 +151,7 @@ docker compose up
 
 ### DataChannel 传输（`packages/protocol/src/control.ts` + `apps/web/src/core`）
 
-一条 DataChannel 多路复用文件传输、文字、语音消息与通话控制，所有控制帧由 zod discriminated union（`controlMessageSchema`）定义：
+一条 DataChannel 多路复用文件传输、文字、语音消息、通话控制与屏幕共享控制，所有控制帧由 zod discriminated union（`controlMessageSchema`）定义：
 
 | 分组     | 控制帧（JSON）                                                                      | 路由键                                      |
 | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
@@ -157,6 +159,7 @@ docker compose up
 | 文件     | `manifest` / `accept` / `reject` / `file-complete` / `transfer-complete` / `cancel` | `transferId`（`file-complete` 按 `fileId`） |
 | 语音消息 | `voice-start` / `voice-complete`                                                    | `msgId` / `streamId`                        |
 | 通话控制 | `call-invite` / `call-accept` / `call-reject` / `call-end`（带 reason 枚举）        | `callId`                                    |
+| 屏幕共享 | `screen-start` / `screen-stop`                                                      | `callId`                                    |
 
 - **数据帧（二进制）**：`[1 字节类型][定长头: fileId + chunkIndex][数据负载]`。`fileId`（语音消息复用同一帧的 `streamId`）为发送方会话内单调递增，接收端据此把数据帧路由到对应 transfer / 语音流。
 - **块大小**：默认 48 KB（整帧 < 64 KB，跨浏览器安全）；探测到更大 `maxMessageSize` 可升到 64 KB。
@@ -167,7 +170,11 @@ docker compose up
 
 ### 实时语音通话（WebRTC 音频轨）
 
-通话控制（invite/accept/reject/end）走**已连接的 DataChannel**（复用上表帧机制，零额外信令成本）；接听后双方 `addTrack(麦克风)` 触发 **renegotiation**，新一轮 offer/answer 经信令服务 `signal` 透传，ICE 复用——协议层 `signaling.ts` 不变。由固定的「原始 PC initiator」一端发起 offer，规避双方同时 `createOffer` 的 glare 冲突。任意时刻只允许一路通话（排他）。相关常量见 `constants.ts`：振铃无应答超时 `CALL_RING_TIMEOUT_MS`（30s）、断连自愈宽限 `CALL_GRACE_MS`（8s）、单条语音最长 `MAX_VOICE_DURATION_MS`（60s）。
+通话控制（invite/accept/reject/end）走**已连接的 DataChannel**（复用上表帧机制，零额外信令成本）；接听后双方 `addTrack(麦克风)` 触发 **renegotiation**，新一轮 offer/answer 经信令服务 `signal` 透传，ICE 复用——协议层 `signaling.ts` 不变。由固定的「原始 PC initiator」一端发起 offer，规避双方同时 `createOffer` 的 glare 冲突。任意时刻只允许一路通话（排他）。麦克风采集开启回声消除（AEC）。相关常量见 `constants.ts`：振铃无应答超时 `CALL_RING_TIMEOUT_MS`（30s）、断连自愈宽限 `CALL_GRACE_MS`（8s）、单条语音最长 `MAX_VOICE_DURATION_MS`（60s）。
+
+### 1v1 会议 + 屏幕共享（WebRTC 视频轨）
+
+屏幕共享是通话之上的能力——必须先接通通话才可发起（依附当前 `callId`）。控制帧 `screen-start` / `screen-stop` 同走 DataChannel；`peer-connection` 持有一条**可复用的视频 transceiver**，演示端 `getDisplayMedia` 取流后 `replaceTrack` 接入并切到 `sendonly`，对端切到 `recvonly`。`screen-share.ts` 是纯逻辑状态机（`none`/`local`/`remote`），**一次只允许一个演示者**，同样由固定 initiator 端发起 renegotiation 避免 glare。共享开始后 UI 切到会议布局（中央画面舞台 + 可折叠聊天侧栏 `CallChatRail`），停止共享、对端离开或视频轨 `ended` 都会复位。`getDisplayMedia` 仅桌面浏览器支持，移动端（iOS 全系、Android Chrome/Firefox）自动隐藏共享入口。
 
 ---
 

@@ -4,15 +4,15 @@
 
 ## 项目概述
 
-PeerLink：基于 WebRTC 的 P2P 即时通讯 + 文件传输系统（Web 版）。**并行多会话 IM**：一个 `SessionManager` 持有 N 条彼此隔离的一对一会话（左侧 Inbox 列表 + 右侧当前会话，非群聊），每条会话 = 独立房间 + ws + `RTCPeerConnection` + `DataChannel` + `Conversation` 编排器。单会话内于**统一时间线**互发文字、语音消息、文件、通话记录（文件保留 accept/reject 确认，纯会话内存阅后即焚）。还支持**实时语音通话**（电话式振铃，音频走 WebRTC 音频轨）。信令与传输彻底分离——文字 / 语音 / 文件数据全部 P2P 直传，**永不经过信令服务**（仅通话媒体协商的 SDP/ICE 走信令透传）。`packages/protocol` 是协议唯一事实源（zod schema + CRC32），前后端共享；多会话复杂度全部收敛在前端，**协议层与信令服务保持 1-1、`MAX_MEMBERS = 2` 不变**。
+PeerLink：基于 WebRTC 的 P2P 即时通讯 + 文件传输系统（Web 版）。**并行多会话 IM**：一个 `SessionManager` 持有 N 条彼此隔离的一对一会话（左侧 Inbox 列表 + 右侧当前会话，非群聊），每条会话 = 独立房间 + ws + `RTCPeerConnection` + `DataChannel` + `Conversation` 编排器。单会话内于**统一时间线**互发文字、语音消息、文件、通话记录（文件保留 accept/reject 确认，纯会话内存阅后即焚）。还支持**实时语音通话**（电话式振铃，音频走 WebRTC 音频轨）与**1v1 会议屏幕共享**（通话之上发起，画面走 WebRTC 视频轨，一次一个演示者，切会议布局）。信令与传输彻底分离——文字 / 语音 / 文件数据全部 P2P 直传，**永不经过信令服务**（仅通话音频 + 屏幕共享视频协商的 SDP/ICE 走信令透传）。`packages/protocol` 是协议唯一事实源（zod schema + CRC32），前后端共享；多会话复杂度全部收敛在前端，**协议层与信令服务保持 1-1、`MAX_MEMBERS = 2` 不变**。
 
 ## Monorepo
 
 pnpm@10 workspace（`apps/*` + `packages/*`），Node ≥22，全 ESM，Turborepo 编排。
 
-- `packages/protocol`（`@peerlink/protocol`）— 信令消息 + 控制帧（`chat` 文字 / `manifest`·`accept`·`reject`·`file-complete`·`transfer-complete`·`cancel` 文件带 `transferId` / `voice-start`·`voice-complete` 语音 / `call-invite`·`call-accept`·`call-reject`·`call-end` 通话带 `callId`）+ 分片帧 + CRC32，纯逻辑，被另两端依赖。
+- `packages/protocol`（`@peerlink/protocol`）— 信令消息 + 控制帧（`chat` 文字 / `manifest`·`accept`·`reject`·`file-complete`·`transfer-complete`·`cancel` 文件带 `transferId` / `voice-start`·`voice-complete` 语音 / `call-invite`·`call-accept`·`call-reject`·`call-end` 通话 + `screen-start`·`screen-stop` 屏幕共享，均带 `callId`）+ 分片帧 + CRC32，纯逻辑，被另两端依赖。
 - `apps/signaling`（`@peerlink/signaling`）— 轻量 `ws` + zod + pino 信令服务，**全内存无数据库**。
-- `apps/web`（`@peerlink/web`）— React 19 + Vite + Tailwind v4 前端，内部分 `core/`（signaling-client / peer-connection / **conversation**（单会话编排器）/ **session-manager**（多会话管理）/ **call-session**（通话状态机）/ sender / receiver / voice-recorder / mic / ringtone / storage）、`state/`、`features/`（Inbox 会话列表 + chat 时间线 + CallPanel 通话 UI）、`routes/`。`conversation.ts` 是单会话对称编排器：一条 DataChannel 上多路复用「文件传输 + 文字 + 语音消息 + 通话控制」（按 `transferId`/`fileId`/`msgId`/`callId` 路由）；`session-manager.ts` 持有 N 个 conversation handle 并桥接到 store；`call-session.ts` 是排他的单路通话状态机（振铃/通话中/自愈宽限/结束，固定 initiator 端发起 renegotiation 避免 glare）。
+- `apps/web`（`@peerlink/web`）— React 19 + Vite + Tailwind v4 前端，内部分 `core/`（signaling-client / peer-connection / **conversation**（单会话编排器）/ **session-manager**（多会话管理）/ **call-session**（通话状态机）/ **screen-share**（屏幕共享状态机）/ sender / receiver / voice-recorder / mic / ringtone / storage）、`state/`、`features/`（Inbox 会话列表 + chat 时间线 + CallPanel 通话/会议 UI + CallChatRail 会议聊天侧栏）、`routes/`。`conversation.ts` 是单会话对称编排器：一条 DataChannel 上多路复用「文件传输 + 文字 + 语音消息 + 通话控制 + 屏幕共享控制」（按 `transferId`/`fileId`/`msgId`/`callId` 路由）；`session-manager.ts` 持有 N 个 conversation handle 并桥接到 store；`call-session.ts` 是排他的单路通话状态机（振铃/通话中/自愈宽限/结束，固定 initiator 端发起 renegotiation 避免 glare）；`screen-share.ts` 是屏幕共享状态机（`none`/`local`/`remote`，依附通话 `callId`，一次一个演示者，同样固定 initiator 端 renegotiation，画面走 `peer-connection` 上可复用的视频 transceiver）。
 
 跨包引用用 `workspace:*`。改协议（`packages/protocol`）会同时影响两端，务必同步。
 
@@ -52,4 +52,4 @@ pnpm --filter @peerlink/<pkg> <script>    # 单包
 
 ## 范围边界（YAGNI，阶段一非目标）
 
-断点续传、群聊/群通话（>2 人同房间）、账号/昵称交换/历史持久化、自建 TURN、信令水平扩展、视频通话、通话录音/设备切换/网络质量指示——均不在当前范围。
+断点续传、群聊/群通话（>2 人同房间）、账号/昵称交换/历史持久化、自建 TURN、信令水平扩展、摄像头视频通话（屏幕共享已支持，但不含摄像头画面）、多人同时演示、屏幕共享标注/录制、通话录音/设备切换/网络质量指示——均不在当前范围。
