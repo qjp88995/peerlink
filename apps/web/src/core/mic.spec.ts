@@ -23,6 +23,21 @@ describe('acquireMic', () => {
     await expect(acquireMic()).resolves.toBe(stream);
   });
 
+  it('requests echo cancellation, noise suppression and auto gain', async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({} as MediaStream);
+    g.navigator = {
+      mediaDevices: { getUserMedia },
+    } as unknown as Navigator;
+    await acquireMic();
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  });
+
   it('maps NotAllowedError to permission-denied', async () => {
     g.navigator = {
       mediaDevices: {

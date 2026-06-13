@@ -14,7 +14,15 @@ export async function acquireMic(): Promise<MediaStream> {
     typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
   if (!md?.getUserMedia) throw new MicError('unsupported');
   try {
-    return await md.getUserMedia({ audio: true });
+    // 显式开启声学回音消除（AEC）+ 降噪 + 自动增益：公放时浏览器以远端外放信号
+    // 为参考，从麦克风采集中减去回声，避免对端听到自己的回音。
+    return await md.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
   } catch (err) {
     const name = (err as { name?: string })?.name;
     if (name === 'NotAllowedError' || name === 'SecurityError') {
