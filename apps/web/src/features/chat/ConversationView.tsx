@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import type { Session } from '@/state/conversation-store';
 import { useRoomsStore } from '@/state/conversation-store';
 import { sessionManager } from '@/state/session-manager';
 
+import { CallChatRail } from './CallChatRail';
 import { CallPanel } from './CallPanel';
 import { Composer } from './Composer';
 import { sessionName, statusHint } from './conversation-list.helpers';
@@ -51,6 +52,10 @@ export function ConversationView({ className }: { className?: string }) {
     s.activeId ? s.sessions[s.activeId] : undefined
   );
   const callError = session?.call.error;
+  // 共享时会话侧栏开合：桌面默认展开，窄屏默认收起（抽屉）。
+  const [chatOpen, setChatOpen] = useState(
+    () => window.matchMedia('(min-width: 768px)').matches
+  );
 
   useEffect(() => {
     if (!activeId || !callError) return;
@@ -91,6 +96,47 @@ export function ConversationView({ className }: { className?: string }) {
   }
 
   const connected = session.connection === 'connected';
+  // 屏幕共享 → 会议室布局：中=舞台，右=会话侧栏/抽屉
+  const sharing = session.call.screen !== 'none';
+
+  const callPanel = (
+    <CallPanel
+      call={session.call}
+      roomId={session.roomId}
+      screenStream={sessionManager.getScreenStream(activeId)}
+      onHangup={() => sessionManager.hangupCall(activeId)}
+      onToggleMute={() =>
+        sessionManager.toggleMute(activeId, !session.call.muted)
+      }
+      onToggleScreen={() =>
+        session.call.screen === 'local'
+          ? sessionManager.stopScreenShare(activeId)
+          : sessionManager.startScreenShare(activeId)
+      }
+      onToggleChat={sharing ? () => setChatOpen(o => !o) : undefined}
+    />
+  );
+
+  const timeline = (
+    <Timeline
+      items={session.items}
+      onAccept={id => sessionManager.acceptTransfer(activeId, id)}
+      onReject={id => sessionManager.rejectTransfer(activeId, id)}
+    />
+  );
+
+  const composer = (
+    <Composer
+      disabled={!connected}
+      onSendText={text => sessionManager.sendText(activeId, text)}
+      onSendFiles={files => sessionManager.sendFiles(activeId, files)}
+      onSendVoice={(blob, mimeType, durationMs) =>
+        void sessionManager.sendVoice(activeId, blob, mimeType, durationMs)
+      }
+      onDial={() => sessionManager.dialCall(activeId)}
+      callBusy={session.call.state !== 'idle'}
+    />
+  );
 
   return (
     <main
@@ -109,38 +155,21 @@ export function ConversationView({ className }: { className?: string }) {
           onReject={() => sessionManager.rejectCall(activeId)}
         />
       )}
-      <CallPanel
-        call={session.call}
-        roomId={session.roomId}
-        screenStream={sessionManager.getScreenStream(activeId)}
-        onHangup={() => sessionManager.hangupCall(activeId)}
-        onToggleMute={() =>
-          sessionManager.toggleMute(activeId, !session.call.muted)
-        }
-        onToggleScreen={() =>
-          session.call.screen === 'local'
-            ? sessionManager.stopScreenShare(activeId)
-            : sessionManager.startScreenShare(activeId)
-        }
-      />
-      {/* 屏幕共享时视频占满，隐藏文字时间线；停止共享后恢复 */}
-      {session.call.screen === 'none' && (
-        <Timeline
-          items={session.items}
-          onAccept={id => sessionManager.acceptTransfer(activeId, id)}
-          onReject={id => sessionManager.rejectTransfer(activeId, id)}
-        />
+      {sharing ? (
+        <div className="flex min-h-0 flex-1">
+          {callPanel}
+          <CallChatRail open={chatOpen} onClose={() => setChatOpen(false)}>
+            {timeline}
+            {composer}
+          </CallChatRail>
+        </div>
+      ) : (
+        <>
+          {callPanel}
+          {timeline}
+          {composer}
+        </>
       )}
-      <Composer
-        disabled={!connected}
-        onSendText={text => sessionManager.sendText(activeId, text)}
-        onSendFiles={files => sessionManager.sendFiles(activeId, files)}
-        onSendVoice={(blob, mimeType, durationMs) =>
-          void sessionManager.sendVoice(activeId, blob, mimeType, durationMs)
-        }
-        onDial={() => sessionManager.dialCall(activeId)}
-        callBusy={session.call.state !== 'idle'}
-      />
     </main>
   );
 }

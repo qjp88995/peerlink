@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   Loader2,
+  MessageSquare,
   Mic,
   MicOff,
   MonitorUp,
@@ -124,6 +125,7 @@ export function CallPanel({
   onHangup,
   onToggleMute,
   onToggleScreen,
+  onToggleChat,
 }: {
   call: CallUiState;
   roomId: string | null;
@@ -131,6 +133,8 @@ export function CallPanel({
   onHangup: () => void;
   onToggleMute: () => void;
   onToggleScreen: () => void;
+  /** 共享时舞台右上角的会话侧栏开关；不传则不渲染。 */
+  onToggleChat?: () => void;
 }) {
   const active = call.state === 'active';
   const elapsed = useElapsed(active);
@@ -191,8 +195,8 @@ export function CallPanel({
     <div
       className={cn(
         'flex flex-col border-b border-line bg-surface/80',
-        // 共享时整块接管剩余高度（时间线已隐藏），让视频随视口收缩、不撑出屏幕
-        anyScreen && 'min-h-0 flex-1'
+        // 共享时作为「舞台」接管剩余空间，让视频随视口收缩、不撑出屏幕
+        anyScreen && 'min-h-0 min-w-0 flex-1'
       )}
     >
       {/* 控制台条 */}
@@ -265,6 +269,19 @@ export function CallPanel({
             <span className="size-2 animate-blink rounded-full bg-signal ring-4 ring-signal/25" />
             {sharing ? '你正在共享' : '对方正在共享'}
           </div>
+
+          {/* 会话侧栏开关 */}
+          {onToggleChat && (
+            <button
+              type="button"
+              onClick={onToggleChat}
+              aria-label="会话"
+              className="absolute top-3 right-3.5 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-ink/55 px-3 py-1.5 text-xs font-semibold text-fg backdrop-blur transition-colors hover:bg-ink/75"
+            >
+              <MessageSquare className="size-4" />
+              会话
+            </button>
+          )}
 
           {/* 浮动控制坞 */}
           <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-white/10 bg-ink/60 p-2 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.7)] backdrop-blur-lg">
