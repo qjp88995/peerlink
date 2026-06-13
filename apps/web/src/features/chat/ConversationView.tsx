@@ -123,11 +123,14 @@ export function ConversationView({ className }: { className?: string }) {
             : sessionManager.startScreenShare(activeId)
         }
       />
-      <Timeline
-        items={session.items}
-        onAccept={id => sessionManager.acceptTransfer(activeId, id)}
-        onReject={id => sessionManager.rejectTransfer(activeId, id)}
-      />
+      {/* 屏幕共享时视频占满，隐藏文字时间线；停止共享后恢复 */}
+      {session.call.screen === 'none' && (
+        <Timeline
+          items={session.items}
+          onAccept={id => sessionManager.acceptTransfer(activeId, id)}
+          onReject={id => sessionManager.rejectTransfer(activeId, id)}
+        />
+      )}
       <Composer
         disabled={!connected}
         onSendText={text => sessionManager.sendText(activeId, text)}

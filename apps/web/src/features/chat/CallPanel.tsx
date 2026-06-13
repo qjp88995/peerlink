@@ -188,11 +188,17 @@ export function CallPanel({
   );
 
   return (
-    <div className="flex flex-col border-b border-line bg-surface/80">
+    <div
+      className={cn(
+        'flex flex-col border-b border-line bg-surface/80',
+        // 共享时整块接管剩余高度（时间线已隐藏），让视频随视口收缩、不撑出屏幕
+        anyScreen && 'min-h-0 flex-1'
+      )}
+    >
       {/* 控制台条 */}
       <div
         className={cn(
-          'animate-slide-down relative flex items-center gap-3.5 overflow-hidden px-4',
+          'animate-slide-down relative flex shrink-0 items-center gap-3.5 overflow-hidden px-4',
           anyScreen ? 'py-2.5' : 'py-3'
         )}
       >
@@ -238,8 +244,9 @@ export function CallPanel({
       </div>
 
       {anyScreen && (
-        // 视频 + 可叠加层容器：后续涂鸦的 <canvas> 直接叠在 <video> 之上，像素对齐。
-        <div className="relative aspect-video w-full bg-black">
+        // 视频 + 可叠加层容器：填充剩余高度，object-contain 完整显示（letterbox）。
+        // 后续涂鸦的 <canvas> 直接叠在 <video> 之上，像素对齐。
+        <div className="relative min-h-0 w-full flex-1 bg-black">
           <video
             ref={videoRef}
             autoPlay
