@@ -155,21 +155,24 @@ export function ConversationView({ className }: { className?: string }) {
           onReject={() => sessionManager.rejectCall(activeId)}
         />
       )}
-      {sharing ? (
-        <div className="flex min-h-0 flex-1">
-          {callPanel}
+      {/*
+        包裹层用 contents/flex 切换，让 CallPanel 始终是同一位置的第一个子节点，
+        共享开关切换时不重挂载 —— 否则 CallPanel 内的会议计时会被重置。
+      */}
+      <div className={cn(sharing ? 'flex min-h-0 flex-1' : 'contents')}>
+        {callPanel}
+        {sharing ? (
           <CallChatRail open={chatOpen} onClose={() => setChatOpen(false)}>
             {timeline}
             {composer}
           </CallChatRail>
-        </div>
-      ) : (
-        <>
-          {callPanel}
-          {timeline}
-          {composer}
-        </>
-      )}
+        ) : (
+          <>
+            {timeline}
+            {composer}
+          </>
+        )}
+      </div>
     </main>
   );
 }
