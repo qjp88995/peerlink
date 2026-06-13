@@ -202,24 +202,28 @@ export function Composer({
         disabled={disabled}
         onClick={openFile}
         aria-label="发送文件"
-        className="flex w-16 flex-col items-center gap-1.5 disabled:opacity-50"
+        className="group flex w-16 cursor-pointer flex-col items-center gap-1.5 transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-50"
       >
-        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg">
+        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg transition-colors group-hover:bg-line-bright">
           <Paperclip className="size-5" />
         </span>
-        <span className="text-xs text-fg-muted">文件</span>
+        <span className="text-xs text-fg-muted transition-colors group-hover:text-fg">
+          文件
+        </span>
       </button>
       <button
         type="button"
         disabled={disabled}
         onClick={openFolder}
         aria-label="发送文件夹"
-        className="flex w-16 flex-col items-center gap-1.5 disabled:opacity-50"
+        className="group flex w-16 cursor-pointer flex-col items-center gap-1.5 transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-50"
       >
-        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg">
+        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg transition-colors group-hover:bg-line-bright">
           <Folder className="size-5" />
         </span>
-        <span className="text-xs text-fg-muted">文件夹</span>
+        <span className="text-xs text-fg-muted transition-colors group-hover:text-fg">
+          文件夹
+        </span>
       </button>
       <button
         type="button"
@@ -229,12 +233,14 @@ export function Composer({
           onDial();
         }}
         aria-label="开会议"
-        className="flex w-16 flex-col items-center gap-1.5 disabled:opacity-50"
+        className="group flex w-16 cursor-pointer flex-col items-center gap-1.5 transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-50"
       >
-        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg">
+        <span className="flex size-12 items-center justify-center rounded-xl bg-surface-2 text-fg transition-colors group-hover:bg-line-bright">
           <PhoneCall className="size-5" />
         </span>
-        <span className="text-xs text-fg-muted">会议</span>
+        <span className="text-xs text-fg-muted transition-colors group-hover:text-fg">
+          会议
+        </span>
       </button>
     </div>
   );
