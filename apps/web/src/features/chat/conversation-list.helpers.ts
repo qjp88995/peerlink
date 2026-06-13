@@ -5,6 +5,12 @@ export function sessionName(session: Session): string {
   return session.roomId ? `#${session.roomId}` : '新会话';
 }
 
+/** 通话头像字形：取 roomId 前两位字母数字，作为稳定的对端标识（无昵称交换）。 */
+export function sessionGlyph(roomId: string | null): string {
+  const s = (roomId ?? '').replace(/[^a-zA-Z0-9]/g, '');
+  return (s.slice(0, 2) || '··').toUpperCase();
+}
+
 export function statusHint(connection: Connection): string {
   switch (connection) {
     case 'waiting':

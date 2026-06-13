@@ -116,12 +116,74 @@ body::after {
   }
 }
 
+/* 通话 UI：来电横幅滑入、声波均衡、振铃呼吸、接听按钮浮动 */
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes equalize {
+  0%,
+  100% {
+    height: 22%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+
 @utility animate-fade-up {
   animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @utility animate-spin-slow {
   animation: spin-slow 1.1s linear infinite;
+}
+
+@utility animate-ping-ring {
+  animation: ping-ring 1.8s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+@utility animate-slide-down {
+  animation: slide-down 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-blink {
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+@utility animate-bob {
+  animation: bob 1.4s ease-in-out infinite;
+}
+
+@utility animate-equalize {
+  animation: equalize 1.1s ease-in-out infinite;
 }
 
 ::selection {

@@ -104,12 +104,14 @@ export function ConversationView({ className }: { className?: string }) {
       )}
       {session.call.state === 'ringing' && session.call.dir === 'in' && (
         <IncomingCallPrompt
+          roomId={session.roomId}
           onAccept={() => sessionManager.acceptCall(activeId)}
           onReject={() => sessionManager.rejectCall(activeId)}
         />
       )}
       <CallPanel
         call={session.call}
+        roomId={session.roomId}
         screenStream={sessionManager.getScreenStream(activeId)}
         onHangup={() => sessionManager.hangupCall(activeId)}
         onToggleMute={() =>
