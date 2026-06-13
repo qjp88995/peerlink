@@ -27,6 +27,7 @@ function makeStore() {
     setCallState: vi.fn(),
     setCallError: vi.fn(),
     setCallMuted: vi.fn(),
+    setScreenState: vi.fn(),
     appendCallRecord: vi.fn(),
   };
 }
@@ -231,5 +232,42 @@ describe('SessionManager', () => {
     await Promise.resolve();
     expect(store.setVoiceReady).not.toHaveBeenCalled();
     expect(revoke).toHaveBeenCalledWith('blob:gone');
+  });
+
+  it('startScreenShare / stopScreenShare delegate to the handle', () => {
+    const store = makeStore();
+    const startScreenShare = vi.fn(() => Promise.resolve());
+    const stopScreenShare = vi.fn(() => Promise.resolve());
+    const start: Start = () =>
+      fakeHandle({ startScreenShare, stopScreenShare });
+    const mgr = new SessionManager({
+      store: store as unknown as SessionStore,
+      start,
+      genId: () => 'id1',
+    });
+    const id = mgr.create();
+    mgr.startScreenShare(id);
+    mgr.stopScreenShare(id);
+    expect(startScreenShare).toHaveBeenCalledTimes(1);
+    expect(stopScreenShare).toHaveBeenCalledTimes(1);
+  });
+
+  it('screen state none clears streams and updates store', () => {
+    const store = makeStore();
+    let captured: ConversationCallbacks | undefined;
+    const start: Start = (_init, callbacks) => {
+      captured = callbacks;
+      return fakeHandle();
+    };
+    const mgr = new SessionManager({
+      store: store as unknown as SessionStore,
+      start,
+      genId: () => 'id1',
+    });
+    mgr.create();
+    captured?.onScreenStateChange?.('local');
+    expect(store.setScreenState).toHaveBeenCalledWith('id1', 'local');
+    captured?.onScreenStateChange?.('none');
+    expect(store.setScreenState).toHaveBeenLastCalledWith('id1', 'none');
   });
 });

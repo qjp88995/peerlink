@@ -31,6 +31,8 @@ const store: SessionStore = {
     useRoomsStore.getState().setCallState(id, state, dir),
   setCallError: (id, error) => useRoomsStore.getState().setCallError(id, error),
   setCallMuted: (id, muted) => useRoomsStore.getState().setCallMuted(id, muted),
+  setScreenState: (id, screen) =>
+    useRoomsStore.getState().setScreenState(id, screen),
   appendCallRecord: (id, record) =>
     useRoomsStore.getState().appendCallRecord(id, record),
 };

@@ -16,7 +16,7 @@ function session(over: Partial<Session> = {}): Session {
     connection: 'connected',
     items: [],
     unread: 0,
-    call: { state: 'idle', dir: null, muted: false },
+    call: { state: 'idle', dir: null, muted: false, screen: 'none' },
     ...over,
   };
 }
