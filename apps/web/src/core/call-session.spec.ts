@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CALL_GRACE_MS, CALL_RING_TIMEOUT_MS } from '@peerlink/protocol';
 
-import { type CallControl,CallSession } from './call-session';
+import { type CallControl, CallSession } from './call-session';
 
 function harness(isInitiator: boolean) {
   const sent: CallControl[] = [];
@@ -284,5 +284,14 @@ describe('CallSession hangup / remote end / disconnect', () => {
     h.session.onConnectionState('disconnected');
     h.session.onConnectionState('connected');
     expect(h.state).toBe('active');
+  });
+});
+
+describe('CallSession currentCallId', () => {
+  it('is null when idle and a number while dialing', async () => {
+    const h = harness(true);
+    expect(h.session.currentCallId()).toBeNull();
+    await h.session.dial();
+    expect(h.session.currentCallId()).toBe(42);
   });
 });
