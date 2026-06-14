@@ -112,6 +112,32 @@ describe('startConversation teardown', () => {
   });
 });
 
+describe('startConversation signaling close', () => {
+  it('reports error and tears down when signaling closes before the channel opens', () => {
+    const cb = makeCallbacks();
+    startConversation({ mode: 'create' }, cb);
+    const sig = mocks.sigs.at(-1)!;
+    sig.emit('open');
+    sig.emit('close'); // 建连阶段（P2P 尚未建立）信令断开
+    expect(cb.onConnection).toHaveBeenLastCalledWith('error');
+    expect(sig.closeCount).toBe(1);
+  });
+
+  it('ignores signaling close once the channel is open (data flows over P2P)', () => {
+    const cb = makeCallbacks();
+    startConversation({ mode: 'create' }, cb);
+    const sig = mocks.sigs.at(-1)!;
+    sig.emit('open');
+    sig.emit('peer-joined', 'peer-x');
+    const peer = mocks.peers.at(-1)!;
+    peer.opts.onChannelOpen({} as RTCDataChannel); // P2P 已建立
+    cb.onConnection.mockClear();
+    sig.emit('close');
+    expect(cb.onConnection).not.toHaveBeenCalledWith('error');
+    expect(peer.closeCount).toBe(0); // 不拆正在工作的 P2P
+  });
+});
+
 describe('startConversation reconnecting grace period', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

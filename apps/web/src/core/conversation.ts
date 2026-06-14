@@ -492,6 +492,9 @@ export function startConversation(
   const sig = new SignalingClient(signalUrl());
   let peer: PeerConnection | undefined;
   let targetPeerId: string | undefined;
+  // P2P 是否曾经接通：通道一旦打开，文字/文件/语音即走 P2P 自足，
+  // 之后信令断开不影响已建立的传输；据此区分「建连阶段断信令」与「已接通后断信令」。
+  let everConnected = false;
 
   const isInitiator = init.mode === 'create';
   const conv = new Conversation({
@@ -554,6 +557,7 @@ export function startConversation(
       },
       onChannelOpen: dc => {
         if (!current()) return;
+        everConnected = true;
         conv.setChannel(rtcSendChannel(dc));
         callbacks.onConnection?.('connected');
       },
@@ -603,6 +607,15 @@ export function startConversation(
   sig.on('error', (_c, m) => {
     callbacks.onConnection?.('error');
     console.warn(m);
+  });
+
+  // 信令连接断开（服务器不可达 / 中途掉线）。建连阶段断开 = 无法接通，
+  // 报错并收尾，避免 UI 永远停在 waiting/connecting；已接通后断开则忽略，
+  // 数据走 P2P 自足，强行 teardown 反而会杀掉正在进行的传输。
+  sig.on('close', () => {
+    if (torndown || everConnected) return;
+    callbacks.onConnection?.('error');
+    teardown();
   });
 
   if (init.mode === 'create') {
