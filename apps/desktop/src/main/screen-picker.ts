@@ -43,7 +43,12 @@ function openPicker(
       width: 720,
       height: 520,
       title: '选择共享内容',
-      webPreferences: { preload: join(__dirname, 'picker-preload.cjs') },
+      webPreferences: {
+        preload: join(__dirname, 'picker-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
     });
     picker.loadFile(join(__dirname, 'picker.html'));
 
@@ -73,17 +78,31 @@ export function installScreenPicker(
   session: Session,
   getParent: () => BrowserWindow
 ): void {
+  // 一次只开一个选择器：重入直接拒绝，避免两个 modal 叠加 + ipc 监听竞态
+  let pickerOpen = false;
   session.setDisplayMediaRequestHandler(
     (_request, callback) => {
+      if (pickerOpen) {
+        callback({});
+        return;
+      }
       desktopCapturer
         .getSources({
           types: ['screen', 'window'],
           thumbnailSize: { width: 320, height: 200 },
         })
         .then(async sources => {
-          const chosen = await openPicker(getParent(), sources);
-          callback(chosen ? { video: chosen } : {});
-        });
+          pickerOpen = true;
+          try {
+            const chosen = await openPicker(getParent(), sources);
+            // chosen 为空 → 传空对象，前端 getDisplayMedia 将 reject
+            callback(chosen ? { video: chosen } : {});
+          } finally {
+            pickerOpen = false;
+          }
+        })
+        // 取源失败也要回调，否则前端 getDisplayMedia 永挂
+        .catch(() => callback({}));
     },
     { useSystemPicker: true }
   );

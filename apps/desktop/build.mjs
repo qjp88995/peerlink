@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +14,8 @@ const common = {
   target: 'node22',
   format: 'cjs',
   external: ['electron'],
-  sourcemap: true,
+  // 仅 dev(--watch) 出 sourcemap；prod 打包不打进 asar，省体积 + 不暴露主进程源码
+  sourcemap: watch,
   logLevel: 'info',
 };
 
@@ -30,9 +31,11 @@ const browserEntry = {
   platform: 'browser',
   format: 'iife',
   outfile: join(outdir, 'picker.js'),
-  sourcemap: true,
+  sourcemap: watch,
 };
 
+// 每次全新构建：清掉上次产物（含改名 / 旧 sourcemap 残留），保证打包内容干净
+rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
 
 async function build() {

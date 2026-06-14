@@ -16,25 +16,18 @@ export function shouldNotify(args: {
 
 type Sessions = Record<string, Session>;
 
-function totalUnread(sessions: Sessions): number {
-  return Object.values(sessions).reduce((sum, s) => sum + s.unread, 0);
-}
-
-/** 找出 unread 刚增加的那条会话（用于通知点击跳转 + 判断是否活跃）。 */
-function bumpedSessionId(prev: Sessions, next: Sessions): string | undefined {
-  return Object.keys(next).find(
+/** 找出 unread 刚增加的所有会话（一次 store 更新可能命中多条，逐条独立判断）。 */
+function bumpedSessionIds(prev: Sessions, next: Sessions): string[] {
+  return Object.keys(next).filter(
     id => (next[id]?.unread ?? 0) > (prev[id]?.unread ?? 0)
   );
 }
 
-/** 找出刚进入「来电」的会话：state==='ringing' && dir==='in'。 */
-function incomingCallSessionId(
-  prev: Sessions,
-  next: Sessions
-): string | undefined {
+/** 找出刚进入「来电」的所有会话：state==='ringing' && dir==='in'。 */
+function incomingCallSessionIds(prev: Sessions, next: Sessions): string[] {
   const ringingIn = (s?: Session) =>
     s?.call.state === 'ringing' && s.call.dir === 'in';
-  return Object.keys(next).find(
+  return Object.keys(next).filter(
     id => ringingIn(next[id]) && !ringingIn(prev[id])
   );
 }
@@ -72,35 +65,41 @@ export function installDesktopNotifications(): void {
     const next = state.sessions;
     const focused = document.hasFocus();
 
-    // ① 来消息
-    const msgId = bumpedSessionId(prev, next);
-    if (
-      msgId &&
-      shouldNotify({
-        prevUnread: totalUnread(prev),
-        nextUnread: totalUnread(next),
-        focused,
-        isActiveSession: msgId === state.activeId,
-      })
-    ) {
-      bridge.notify({
-        title: 'PeerLink',
-        body: '收到新消息',
-        kind: 'message',
-        sessionId: msgId,
-      });
-      playBeep();
+    // ① 来消息：逐条刚增加 unread 的会话独立判断（按各自 unread，而非全局总和）
+    let beeped = false;
+    for (const id of bumpedSessionIds(prev, next)) {
+      if (
+        shouldNotify({
+          prevUnread: prev[id]?.unread ?? 0,
+          nextUnread: next[id]?.unread ?? 0,
+          focused,
+          isActiveSession: id === state.activeId,
+        })
+      ) {
+        bridge.notify({
+          title: 'PeerLink',
+          body: '收到新消息',
+          kind: 'message',
+          sessionId: id,
+        });
+        // 同一 tick 多条只响一次提示音，避免连续蜂鸣
+        if (!beeped) {
+          playBeep();
+          beeped = true;
+        }
+      }
     }
 
     // ② 来电（窗口看不见时才弹；可见时 CallPanel 已经在闪了）
-    const callId = incomingCallSessionId(prev, next);
-    if (callId && !focused) {
-      bridge.notify({
-        title: 'PeerLink',
-        body: '来电…',
-        kind: 'call',
-        sessionId: callId,
-      });
+    if (!focused) {
+      for (const id of incomingCallSessionIds(prev, next)) {
+        bridge.notify({
+          title: 'PeerLink',
+          body: '来电…',
+          kind: 'call',
+          sessionId: id,
+        });
+      }
     }
 
     prev = next;
