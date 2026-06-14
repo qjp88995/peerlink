@@ -35,3 +35,6 @@ linux:
   icon: resources/icon.png
   # .deb 必须有 maintainer；package.json 的 author 未带邮箱，这里显式给出。
   maintainer: qjp88995 <qjp88995@users.noreply.github.com>
+  # 产物名用 productName，否则默认取 scoped 包名 @peerlink/desktop，
+  # 其中的 / 会让 deb 写入不存在的子目录而失败。
+  artifactName: ${productName}-${version}-${arch}.${ext}
