@@ -96,7 +96,9 @@ export class SignalingServer {
   private isOriginAllowed(origin: string | undefined): boolean {
     const allow = this.config.allowedOrigins;
     if (!allow) return true;
-    return origin !== undefined && allow.includes(origin);
+    const ok = origin !== undefined && allow.includes(origin);
+    if (!ok) this.log.info({ origin }, 'rejected disallowed origin');
+    return ok;
   }
 
   /** 每个心跳周期：回收无 pong 的连接，向存活连接发新 ping。 */
@@ -134,6 +136,10 @@ export class SignalingServer {
     this.clients.set(peerId, client);
     this.lan.add(peerId, ipGroup, name);
     this.broadcastLanPeers(peerId);
+    this.log.debug(
+      { peerId, ipGroup, clients: this.clients.size },
+      'client connected'
+    );
 
     socket.on('pong', () => {
       client.isAlive = true;
@@ -148,6 +154,7 @@ export class SignalingServer {
     try {
       parsed = clientMessageSchema.parse(JSON.parse(raw));
     } catch {
+      this.log.info({ peerId: client.peerId }, 'rejected unparseable message');
       this.send(client.peerId, {
         type: 'error',
         code: 'BAD_MESSAGE',
@@ -160,12 +167,17 @@ export class SignalingServer {
       case 'create-room': {
         if (!this.rateLimitOk(client)) return;
         const roomId = this.rooms.createRoom(client.peerId);
+        this.log.debug({ peerId: client.peerId, roomId }, 'room created');
         this.send(client.peerId, { type: 'room-created', roomId });
         break;
       }
       case 'join-room': {
         const result = this.rooms.joinRoom(parsed.roomId, client.peerId);
         if (!result.ok) {
+          this.log.info(
+            { peerId: client.peerId, roomId: parsed.roomId, code: result.code },
+            'join rejected'
+          );
           this.send(client.peerId, {
             type: 'error',
             code: result.code,
@@ -176,6 +188,10 @@ export class SignalingServer {
           });
           return;
         }
+        this.log.debug(
+          { peerId: client.peerId, roomId: parsed.roomId },
+          'peer joined room'
+        );
         // 先到的成员为发起方：通知它有新对端加入。
         for (const existing of result.existingPeers) {
           this.send(existing, { type: 'peer-joined', peerId: client.peerId });
@@ -221,6 +237,10 @@ export class SignalingServer {
   /** 消耗一个令牌；超额时回 RATE_LIMITED 并返回 false。 */
   private rateLimitOk(client: Client): boolean {
     if (client.createBucket.tryConsume()) return true;
+    this.log.info(
+      { peerId: client.peerId, ipGroup: client.ipGroup },
+      'rate limited'
+    );
     this.send(client.peerId, {
       type: 'error',
       code: 'RATE_LIMITED',
@@ -232,6 +252,10 @@ export class SignalingServer {
   private onClose(client: Client): void {
     if (!this.clients.has(client.peerId)) return;
     this.clients.delete(client.peerId);
+    this.log.debug(
+      { peerId: client.peerId, clients: this.clients.size },
+      'client disconnected'
+    );
     const group = this.lan
       .groupMembers(client.peerId)
       .filter(p => p !== client.peerId);
