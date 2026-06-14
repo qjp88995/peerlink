@@ -8,6 +8,7 @@ import {
   registerSchemePrivileges,
 } from './app-protocol';
 import { ConfigStore, type IceConfig } from './config-store';
+import { showNotification } from './notifications';
 import { installScreenPicker } from './screen-picker';
 import { domainFromSignalUrl } from './signal-url';
 import { setupTray, wireCloseToTray } from './tray';
@@ -87,6 +88,11 @@ app.whenReady().then(() => {
     config.setIce(ice);
     mainWindow?.webContents.send('peerlink:config-changed', currentBootstrap());
   });
+  ipcMain.on(
+    'peerlink:notify',
+    (_e, payload: { title: string; body: string; sessionId: string }) =>
+      showNotification(payload, () => mainWindow)
+  );
 
   if (!isDev) registerAppProtocol(join(__dirname, 'renderer'));
   createWindow();
