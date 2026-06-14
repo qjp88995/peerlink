@@ -1,6 +1,55 @@
+import { join } from 'node:path';
+
 import { app, BrowserWindow } from 'electron';
 
+import {
+  APP_ORIGIN,
+  registerAppProtocol,
+  registerSchemePrivileges,
+} from './app-protocol';
+import { ConfigStore } from './config-store';
+
+const isDev = !app.isPackaged;
+const DEV_URL = 'http://localhost:5173';
+
+registerSchemePrivileges();
+
+let mainWindow: BrowserWindow | undefined;
+let config: ConfigStore;
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 1180,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      // 提示音 / 振铃用 WebAudio + <audio>，且常在非用户手势时触发（来消息），
+      // 关掉自动播放手势限制，否则首次播放会被静默拦截。
+      autoplayPolicy: 'no-user-gesture-required',
+    },
+  });
+
+  if (isDev) {
+    mainWindow.loadURL(DEV_URL);
+  } else {
+    mainWindow.loadURL(`${APP_ORIGIN}/`);
+  }
+}
+
 app.whenReady().then(() => {
-  const win = new BrowserWindow({ width: 1100, height: 760 });
-  win.loadURL('data:text/html,<h1>PeerLink desktop scaffold</h1>');
+  config = new ConfigStore(join(app.getPath('userData'), 'config.json'));
+  if (!isDev) registerAppProtocol(join(__dirname, 'renderer'));
+  createWindow();
 });
+
+app.on('window-all-closed', () => {
+  // Task 6 会改成"关窗到托盘不退出"；当前先保留默认。
+  if (process.platform !== 'darwin') app.quit();
+});
+
+export { config, mainWindow };
