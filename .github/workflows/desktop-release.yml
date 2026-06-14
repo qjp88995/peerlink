@@ -9,6 +9,9 @@ on:
 
 jobs:
   build:
+    # 创建 GitHub Release 需要写 contents，默认 GITHUB_TOKEN 只读会 403。
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
