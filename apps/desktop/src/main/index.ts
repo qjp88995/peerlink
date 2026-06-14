@@ -77,6 +77,18 @@ function createWindow(): void {
   } else {
     mainWindow.loadURL(`${APP_ORIGIN}/`);
   }
+
+  // 授予媒体权限：否则 renderer 的 getUserMedia({audio}) 在 Electron 中被拒，
+  // 语音通话取麦克风失败，对端显示「对方无可用麦克风」。浏览器自带权限弹窗，
+  // Electron 必须主进程显式放行。屏幕共享另走 setDisplayMediaRequestHandler，
+  // 这里 display-capture 一并放行以防回退路径被拦。
+  const ses = mainWindow.webContents.session;
+  const allow = (p: string) => p === 'media' || p === 'display-capture';
+  ses.setPermissionRequestHandler((_wc, permission, callback) =>
+    callback(allow(permission))
+  );
+  ses.setPermissionCheckHandler((_wc, permission) => allow(permission));
+
   installScreenPicker(mainWindow.webContents.session, () => mainWindow!);
   wireCloseToTray(mainWindow, () => quitting);
 }
