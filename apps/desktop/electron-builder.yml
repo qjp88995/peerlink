@@ -23,6 +23,8 @@ win:
     - target: nsis
       arch: [x64]
   icon: resources/icon.png
+  # 默认产物名 `${productName} ${version}.${ext}` 含空格，统一改用连字符。
+  artifactName: ${productName}-${version}-${arch}.${ext}
 nsis:
   oneClick: false
   perMachine: false
