@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family: system-ui;
+        margin: 0;
+        padding: 16px;
+        background: #1a1714;
+        color: #eee;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .item {
+        border: 2px solid transparent;
+        border-radius: 8px;
+        padding: 6px;
+        cursor: pointer;
+        background: #262220;
+      }
+      .item:hover {
+        border-color: #d98c4a;
+      }
+      .item img {
+        width: 100%;
+        height: 110px;
+        object-fit: cover;
+        border-radius: 4px;
+      }
+      .item span {
+        display: block;
+        font-size: 12px;
+        margin-top: 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .bar {
+        margin-top: 16px;
+        text-align: right;
+      }
+      button {
+        background: #333;
+        color: #eee;
+        border: 0;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>选择要共享的屏幕或窗口</h2>
+    <div class="grid" id="grid"></div>
+    <div class="bar"><button id="cancel">取消</button></div>
+    <script src="./picker.js"></script>
+  </body>
+</html>

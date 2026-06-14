@@ -8,6 +8,7 @@ import {
   registerSchemePrivileges,
 } from './app-protocol';
 import { ConfigStore, type IceConfig } from './config-store';
+import { installScreenPicker } from './screen-picker';
 import { domainFromSignalUrl } from './signal-url';
 
 const isDev = !app.isPackaged;
@@ -49,6 +50,7 @@ function createWindow(): void {
   } else {
     mainWindow.loadURL(`${APP_ORIGIN}/`);
   }
+  installScreenPicker(mainWindow.webContents.session, () => mainWindow!);
 }
 
 app.whenReady().then(() => {
