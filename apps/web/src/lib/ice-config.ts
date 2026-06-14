@@ -1,3 +1,5 @@
+import { getRuntimeIce } from './desktop-bridge';
+
 export interface IceConfigEnv {
   VITE_STUN_URLS?: string;
   VITE_TURN_URL?: string;
@@ -40,6 +42,18 @@ export function buildIceServers(env: IceConfigEnv): RTCIceServer[] {
  * 再回退到 DEFAULT_STUN。
  */
 export function iceServersFromEnv(): RTCIceServer[] {
+  // 桌面端：运行时 holder 的 ICE 优先（绕开 ice-config.js 的 {} 覆盖；经
+  // onConfigChange 更新，改 ICE 后下次新建 peer 即用新值，无需 reload）
+  const ice = getRuntimeIce();
+  if (ice && (ice.stunUrls?.trim() || ice.turnUrl?.trim())) {
+    return buildIceServers({
+      VITE_STUN_URLS: ice.stunUrls,
+      VITE_TURN_URL: ice.turnUrl,
+      VITE_TURN_USERNAME: ice.turnUsername,
+      VITE_TURN_CREDENTIAL: ice.turnCredential,
+    });
+  }
+
   const rt =
     typeof window !== 'undefined' ? window.__PEERLINK_ICE__ : undefined;
   if (rt && (rt.stunUrls?.trim() || rt.turnUrl?.trim())) {
