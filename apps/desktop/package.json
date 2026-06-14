@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "PeerLink desktop — WebRTC P2P 即时通讯 + 文件传输客户端",
+  "author": "qinjiapeng",
+  "repository": "https://github.com/qjp88995/peerlink",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
