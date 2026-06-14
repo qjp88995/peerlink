@@ -12,6 +12,7 @@ import {
   type FileEntry,
 } from '@peerlink/protocol';
 
+import { getSignalUrl } from '../lib/desktop-bridge';
 import { iceServersFromEnv } from '../lib/ice-config';
 import { throttleProgress } from '../lib/progress-throttle';
 import {
@@ -485,6 +486,8 @@ export class Conversation {
 }
 
 function signalUrl(): string {
+  const desktop = getSignalUrl();
+  if (desktop) return desktop; // 桌面端：运行时最新值，改设置后即时生效
   if (import.meta.env.VITE_SIGNAL_URL) return import.meta.env.VITE_SIGNAL_URL;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const path = import.meta.env.VITE_SIGNAL_PATH ?? '/signal';

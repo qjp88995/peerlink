@@ -58,4 +58,15 @@ describe('iceServersFromEnv runtime override', () => {
     expect(String(servers[0].urls)).toContain('stun:');
     expect(servers.every(s => String(s.urls).startsWith('stun'))).toBe(true);
   });
+
+  it('优先使用 window.peerlink.ice 而非 __PEERLINK_ICE__', () => {
+    const original = window.peerlink;
+    // @ts-expect-error 测试注入
+    window.peerlink = { ice: { stunUrls: 'stun:bridge:3478' } };
+    window.__PEERLINK_ICE__ = { stunUrls: 'stun:legacy:3478' };
+    const servers = iceServersFromEnv();
+    expect(servers.some(s => String(s.urls).includes('bridge'))).toBe(true);
+    expect(servers.some(s => String(s.urls).includes('legacy'))).toBe(false);
+    window.peerlink = original;
+  });
 });

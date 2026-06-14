@@ -1,13 +1,14 @@
 import { join } from 'node:path';
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 
 import {
   APP_ORIGIN,
   registerAppProtocol,
   registerSchemePrivileges,
 } from './app-protocol';
-import { ConfigStore } from './config-store';
+import { ConfigStore, type IceConfig } from './config-store';
+import { domainFromSignalUrl } from './signal-url';
 
 const isDev = !app.isPackaged;
 const DEV_URL = 'http://localhost:5173';
@@ -16,6 +17,15 @@ registerSchemePrivileges();
 
 let mainWindow: BrowserWindow | undefined;
 let config: ConfigStore;
+
+function currentBootstrap() {
+  const c = config.get();
+  return {
+    signalUrl: c.signalUrl,
+    signalDomain: domainFromSignalUrl(c.signalUrl),
+    ice: c.ice,
+  };
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -43,6 +53,19 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   config = new ConfigStore(join(app.getPath('userData'), 'config.json'));
+
+  ipcMain.on('peerlink:bootstrap', e => {
+    e.returnValue = currentBootstrap();
+  });
+  ipcMain.handle('peerlink:set-signal-domain', (_e, domain: string) => {
+    config.setSignalDomain(domain);
+    mainWindow?.webContents.send('peerlink:config-changed', currentBootstrap());
+  });
+  ipcMain.handle('peerlink:set-ice', (_e, ice: IceConfig) => {
+    config.setIce(ice);
+    mainWindow?.webContents.send('peerlink:config-changed', currentBootstrap());
+  });
+
   if (!isDev) registerAppProtocol(join(__dirname, 'renderer'));
   createWindow();
 });
