@@ -1,0 +1,22 @@
+# 构建上下文瘦身：以下内容由镜像内 pnpm install / build 重新生成，
+# 不应从宿主推给 Docker daemon（拖慢上传、撑大缓存、引入陈旧产物）。
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/release
+.git
+.pnpm-store
+*.log
+
+# 本地 / 开发专用，生产镜像构建用不到
+.claude
+.husky
+.vscode
+.github
+docker-compose*.yml
+
+# 不让任何真实环境变量进入构建上下文（仅保留示例）
+.env
+.env.*
+!.env.example
