@@ -17,13 +17,26 @@ export function rtcSendChannel(dc: RTCDataChannel): SendChannel {
     },
     waitForDrain(threshold) {
       if (dc.bufferedAmount <= threshold) return Promise.resolve();
-      return new Promise(resolve => {
-        dc.bufferedAmountLowThreshold = threshold;
-        const handler = () => {
-          dc.removeEventListener('bufferedamountlow', handler);
+      return new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          dc.removeEventListener('bufferedamountlow', onDrain);
+          dc.removeEventListener('close', onClose);
+          dc.removeEventListener('error', onClose);
+        };
+        const onDrain = () => {
+          cleanup();
           resolve();
         };
-        dc.addEventListener('bufferedamountlow', handler);
+        // 通道在等待期间关闭/出错时 bufferedamountlow 永不再触发；
+        // 必须 reject 解除发送方挂起（上层转 onTransferFailed），否则永久 hang。
+        const onClose = () => {
+          cleanup();
+          reject(new Error('data channel closed while draining'));
+        };
+        dc.bufferedAmountLowThreshold = threshold;
+        dc.addEventListener('bufferedamountlow', onDrain);
+        dc.addEventListener('close', onClose);
+        dc.addEventListener('error', onClose);
       });
     },
   };
