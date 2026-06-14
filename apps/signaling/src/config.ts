@@ -15,6 +15,11 @@ export interface SignalingConfig {
   allowedOrigins: string[] | null;
   /** 心跳 ping 间隔（毫秒）：连续两次无 pong 的连接会被回收。 */
   heartbeatIntervalMs: number;
+  /**
+   * 单连接对 create-room / lan-invite 的令牌桶限流：
+   * capacity = 突发上限，windowMs = 补满一桶所需时间（稳态 ≈ capacity/windowMs）。
+   */
+  rateLimit: { capacity: number; windowMs: number };
 }
 
 export function loadConfig(
@@ -31,5 +36,9 @@ export function loadConfig(
     maxPayloadBytes: Number(env.MAX_PAYLOAD_BYTES ?? 1024 * 1024),
     allowedOrigins: origins && origins.length > 0 ? origins : null,
     heartbeatIntervalMs: Number(env.HEARTBEAT_INTERVAL_MS ?? 30 * 1000),
+    rateLimit: {
+      capacity: Number(env.ROOM_CREATE_BURST ?? 10),
+      windowMs: Number(env.ROOM_CREATE_WINDOW_MS ?? 60 * 1000),
+    },
   };
 }

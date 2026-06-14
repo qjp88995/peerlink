@@ -227,6 +227,10 @@ pnpm --filter @peerlink/desktop dist   # 本地构建安装包到 apps/desktop/r
 | `ALLOWED_ORIGINS`       | 放行任意  | 浏览器 Origin 白名单（逗号分隔）；公网应显式收敛以拒跨站连接 |
 | `MAX_PAYLOAD_BYTES`     | `1048576` | 单条信令消息上限，超出由 `ws` 关闭连接（防内存放大）         |
 | `HEARTBEAT_INTERVAL_MS` | `30000`   | ping/pong 心跳间隔，连续两周期无 pong 即回收僵尸连接         |
+| `ROOM_CREATE_BURST`     | `10`      | 单连接建房令牌桶突发上限，超额回 `RATE_LIMITED`              |
+| `ROOM_CREATE_WINDOW_MS` | `60000`   | 令牌桶补满窗口（稳态 ≈ `BURST / WINDOW` 次/毫秒）            |
+
+> 房间「待接通」状态即开始记时，无人加入的空挂房间也会在 `ROOM_TTL_MS`（默认 10 分钟）后被回收——配合建房限流，堵住单条长连接刷 `create-room` 撑爆房间表的内存放大路径。
 
 > ⚠️ 公网部署若要拒绝跨站连接，**必须**显式设置 `ALLOWED_ORIGINS` 为前端域名，否则 Origin 防护是空的。
 

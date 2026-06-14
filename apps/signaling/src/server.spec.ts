@@ -189,4 +189,16 @@ describe('SignalingServer', () => {
     expect(l.peerId).toBeTruthy();
     alice.close();
   });
+
+  it('rate-limits create-room beyond the configured burst', async () => {
+    await restart({ rateLimit: { capacity: 2, windowMs: 60_000 } });
+    const ws = await connect();
+    const err = next(ws, m => m.type === 'error');
+    ws.send(JSON.stringify({ type: 'create-room' }));
+    ws.send(JSON.stringify({ type: 'create-room' }));
+    ws.send(JSON.stringify({ type: 'create-room' })); // 第 3 个超出突发上限
+    const e = (await err) as Extract<ServerMessage, { type: 'error' }>;
+    expect(e.code).toBe('RATE_LIMITED');
+    ws.close();
+  });
 });

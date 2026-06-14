@@ -12,6 +12,7 @@ import { type WebSocket, WebSocketServer } from 'ws';
 import type { SignalingConfig } from './config';
 import { generateDeviceName, LanRegistry } from './lan-registry';
 import { RoomManager } from './room-manager';
+import { TokenBucket } from './token-bucket';
 
 interface Client {
   peerId: string;
@@ -19,6 +20,8 @@ interface Client {
   ipGroup: string;
   /** 上一个心跳周期内是否收到过 pong；连续两周期为 false 即回收。 */
   isAlive: boolean;
+  /** create-room / lan-invite 的令牌桶，随 client 一起回收，无需额外清理。 */
+  createBucket: TokenBucket;
 }
 
 export class SignalingServer {
@@ -105,7 +108,17 @@ export class SignalingServer {
   private onConnection(socket: WebSocket, ipGroup: string): void {
     const peerId = randomUUID();
     const name = generateDeviceName();
-    const client: Client = { peerId, socket, ipGroup, isAlive: true };
+    const { capacity, windowMs } = this.config.rateLimit;
+    const client: Client = {
+      peerId,
+      socket,
+      ipGroup,
+      isAlive: true,
+      createBucket: new TokenBucket({
+        capacity,
+        refillPerMs: capacity / windowMs,
+      }),
+    };
     this.clients.set(peerId, client);
     this.lan.add(peerId, ipGroup, name);
     this.broadcastLanPeers(peerId);
@@ -133,6 +146,7 @@ export class SignalingServer {
 
     switch (parsed.type) {
       case 'create-room': {
+        if (!this.rateLimitOk(client)) return;
         const roomId = this.rooms.createRoom(client.peerId);
         this.send(client.peerId, { type: 'room-created', roomId });
         break;
@@ -157,6 +171,7 @@ export class SignalingServer {
         break;
       }
       case 'lan-invite': {
+        if (!this.rateLimitOk(client)) return;
         const target = this.clients.get(parsed.targetPeerId);
         if (!target || target.ipGroup !== client.ipGroup) {
           this.send(client.peerId, {
@@ -189,6 +204,17 @@ export class SignalingServer {
         break;
       }
     }
+  }
+
+  /** 消耗一个令牌；超额时回 RATE_LIMITED 并返回 false。 */
+  private rateLimitOk(client: Client): boolean {
+    if (client.createBucket.tryConsume()) return true;
+    this.send(client.peerId, {
+      type: 'error',
+      code: 'RATE_LIMITED',
+      message: '操作过于频繁，请稍后再试',
+    });
+    return false;
   }
 
   private onClose(client: Client): void {

@@ -64,4 +64,23 @@ describe('RoomManager', () => {
       code: 'ROOM_NOT_FOUND',
     });
   });
+
+  it('reap removes a created room that no one ever joined after ttl', () => {
+    const clock = { t: 0 };
+    const m = makeManager(clock);
+    const id = m.createRoom('alice'); // 仅创建，从未有第二人加入
+    clock.t = 999;
+    expect(m.reap()).toEqual([]); // ttl 内保留，给口令留出分享时间
+    clock.t = 1001;
+    expect(m.reap()).toEqual([id]); // 超过 ttl 仍无人加入，回收
+  });
+
+  it('does not reap a room a second peer has joined', () => {
+    const clock = { t: 0 };
+    const m = makeManager(clock);
+    const id = m.createRoom('alice');
+    m.joinRoom(id, 'bob'); // 已接通
+    clock.t = 10_000; // 远超 ttl
+    expect(m.reap()).toEqual([]); // 活跃房间不回收
+  });
 });

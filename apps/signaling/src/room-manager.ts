@@ -7,7 +7,11 @@ export type JoinResult =
 interface Room {
   id: string;
   members: string[];
-  /** 最后一次成员数变为 0 的时间；非空时为 null。 */
+  /**
+   * 房间处于「待接通」（不足两人）状态的起始时间；接通后为 null。
+   * 创建时即记时，故从未有人加入的空挂房间也会在 ttl 后被 reap 回收，
+   * 否则一条长连接疯狂 create-room 会让房间表无界增长。
+   */
   emptySince: number | null;
 }
 
@@ -35,7 +39,7 @@ export class RoomManager {
   createRoom(peerId: string): string {
     let id = this.genId();
     while (this.rooms.has(id)) id = this.genId();
-    this.rooms.set(id, { id, members: [peerId], emptySince: null });
+    this.rooms.set(id, { id, members: [peerId], emptySince: this.now() });
     this.peerToRoom.set(peerId, id);
     return id;
   }
