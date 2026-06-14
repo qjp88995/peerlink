@@ -13,5 +13,12 @@ export default defineConfig(
       globals: { ...globals.node, ...globals.browser },
     },
     rules: { 'simple-import-sort/imports': 'error' },
+  },
+  {
+    files: ['**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: { ...globals.node },
+    },
   }
 );

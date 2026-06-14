@@ -6,12 +6,12 @@
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
-    "dev": "node build.mjs --watch & wait-on dist/main.cjs && electron .",
+    "dev": "concurrently -k \"pnpm --filter @peerlink/web dev\" \"node build.mjs --watch\" \"wait-on http://localhost:5173 dist/main.cjs && electron .\"",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist": "node build.mjs && electron-builder"
+    "dist": "pnpm --filter @peerlink/web build && node build.mjs && electron-builder"
   },
   "dependencies": {
     "@peerlink/web": "workspace:*"
