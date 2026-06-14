@@ -6,14 +6,26 @@
 
 **Architecture:** 新增 `apps/desktop`（`@peerlink/desktop`）Electron 包，renderer 复用 `apps/web` 构建产物，**不 fork 前端**。所有桌面专属能力收敛到 preload 经 `contextBridge` 暴露的单一 `window.peerlink` 后；前端用特性检测自适应，浏览器里无 bridge 则走原逻辑。dev 加载 Vite dev server，prod 用自定义 `app://` 协议从打包进 asar 的 `dist/renderer` 提供静态资源。
 
-**Tech Stack:** Electron + esbuild（打包 main/preload/picker，复用项目已有 esbuild）+ electron-builder（三平台分发）+ Vitest（纯逻辑 TDD）。配置用自写 JSON store（对齐项目"无数据库"作风，零新增运行时依赖）。
+**Tech Stack:** Electron + esbuild（打包 main/preload/picker，复用项目已有 esbuild）+ electron-builder（三平台分发，**出包走 CI matrix**）+ Vitest（纯逻辑 TDD）。配置用自写 JSON store（对齐项目"无数据库"作风，零新增运行时依赖）。
+
+**开发环境：容器内开发（对齐项目 Docker 工作流）。**
+
+- **依赖**经现有 `deps` 容器一次性 `pnpm install` 安装。electron / electron-builder 二进制走 npmmirror 镜像（`docker/Dockerfile.dev` 已写入 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR`），否则容器内从 GitHub releases 拉二进制必然超时。**不在宿主 `pnpm add`**。
+- **桌面壳**在 `docker compose --profile desktop up desktop` 的容器里跑（`docker-compose.yml` 已加 `desktop` 服务，`profiles: [desktop]` 默认不启动，不影响现有 web/signaling）。该容器自带一套 vite（同容器 `localhost:5173`，HMR 同源正常）+ esbuild watch + electron，GUI 经挂载的 **WSLg socket**（`/tmp/.X11-unix` + `/mnt/wslg`）显示到真实 WSL / Windows 桌面；electron 主进程日志用 `docker compose logs -f desktop` 读取，便于在容器内调试。
+- **容器内 electron** 用 `ELECTRON_DISABLE_SANDBOX=1` + `LIBGL_ALWAYS_SOFTWARE=1`（compose 已设），无需改命令。GUI 变量（`DISPLAY`/`WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`/`PULSE_SERVER`）从真实 WSL 继承，compose 给出标准 WSLg 默认值。
+  > 注：docker daemon 跑在**真实 WSL**，而非本计划编排所在的沙箱环境——两者是不同的 WSL 实例，沙箱里探测到的 `/mnt/wslg` 缺失 / `DISPLAY=:1` 等**不代表真机**。compose 的挂载与变量均由真实 WSL 解析，按标准 WSLg 配；真机若路径不同，在 `.env` 覆盖对应变量。
+- **能容器内跑**：纯逻辑单测 / typecheck / lint / esbuild 打包 / web dist 构建 / electron 启动 + IPC 冒烟（读日志）。**需真机复核**：屏幕共享、托盘、原生通知弹窗、音频振铃——与合成器/桌面环境相关。三平台安装包由 CI matrix 出（容器无显示，且 mac 包必须在 macOS）。
+- **命令约定**：下文各 Task 的 `pnpm <script>`（test / typecheck / lint / build）一律**在容器内执行**——无需 GUI 的用 `docker compose run --rm deps pnpm …`（deps 容器跑完 install 即可复用），或对已起的服务 `docker compose exec <svc> pnpm …`。为简洁，下文仍直接写 `pnpm …`，默认带上述前缀。
 
 **关键设计决策（实现时务必遵守）：**
 
-1. **ICE 与信令地址都走 `window.peerlink`**，不走 `window.__PEERLINK_ICE__`。原因：前端 `index.html` 里 `<script src="/ice-config.js">` 会在 preload 之后执行并把 `window.__PEERLINK_ICE__` 重置为 `{}`，会覆盖 preload 注入。改为前端优先读 `window.peerlink?.ice` 即可绕开覆盖，且统一到单一 bridge。
+1. **ICE 与信令地址都走 `window.peerlink`**，不走 `window.__PEERLINK_ICE__`。原因：前端 `index.html` 里 `<script src="/ice-config.js">` 会在 preload 之后执行并把 `window.__PEERLINK_ICE__` 重置为 `{}`，会覆盖 preload 注入。改为前端优先读 `window.peerlink` 即可绕开覆盖，且统一到单一 bridge。
 2. **不修改 Vite `base`**。`app://` 自定义协议配 path 解析 handler，绝对路径 `/assets/...` 能正确解析到 `dist/assets/...`，无需 `base: './'`。web 部署（`peerlink.qinjiapeng.com`）继续 base `/` 不变。
+   > 勘误：design 文档（`2026-06-13-peerlink-desktop-design.md` 第 137 行）写的「为 app:// 把 Vite base 设为相对 `./`」已被本决策取代，**以本计划为准**，实现时不要改 base。
 3. **main / preload 打成 CommonJS（`.cjs`）**，`external: ['electron']`，`sandbox: false`（让 preload 能用 `ipcRenderer`），`contextIsolation: true` + `nodeIntegration: false`。
 4. **bridge 契约类型**由 `apps/web` 拥有（消费方视角），preload 实现同一形状（结构化类型，跨包不强耦合构建）。两侧接口若改需同步。
+5. **配置变更绝不 `reload()` 窗口。** 本项目消息是纯内存阅后即焚、且 Task 6 后台常驻要保活 WebRTC/会话——`reload()` 会清空一切。改信令地址 / ICE 后，主进程经 `peerlink:config-changed` 事件把新配置推给 renderer，renderer 更新 `desktop-bridge` 的运行时 holder；`signalUrl()` / `iceServersFromEnv()` 在下次建连时现读 holder，**活跃会话与时间线全部存活**，新连接自动用新地址。
+6. **通知区分"来消息 / 来电"。** `bridge.notify` 带 `kind: 'message' | 'call'`。Task 7 既订阅未读消息增量，也订阅通话状态进入 `incoming`（窗口隐藏时来电要能弹系统通知 + 点亮窗口去接听，而非只靠振铃）。
 
 ---
 
@@ -69,6 +81,8 @@
 - Create: `apps/desktop/eslint.config.mjs`
 - Create: `apps/desktop/src/main/index.ts`（临时最小入口）
 
+> 前置：容器开发基础设施**已就绪**——`docker/Dockerfile.dev`（已加 Electron GUI 运行库 + `ELECTRON_MIRROR`/`ELECTRON_BUILDER_BINARIES_MIRROR`）与 `docker-compose.yml` 的 `desktop` 服务（`profiles: [desktop]`、WSLg socket 挂载、`ELECTRON_DISABLE_SANDBOX`）。本 Task 起的安装 / 构建 / 测试 / 运行均在容器内进行（见顶部"开发环境"与"命令约定"）。
+
 - [ ] **Step 1: 写包定义**
 
 `apps/desktop/package.json`：
@@ -95,6 +109,9 @@
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@types/node": "catalog:",
+    "concurrently": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
     "esbuild": "catalog:",
     "eslint": "catalog:",
     "eslint-plugin-simple-import-sort": "catalog:",
@@ -102,11 +119,12 @@
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:",
+    "wait-on": "catalog:",
   },
 }
 ```
 
-（`electron` / `electron-builder` / `wait-on` 在 Step 4 用 `pnpm add` 落地真实版本。`dev` 脚本在 Task 9 会替换成 concurrently 版，这里先占位。）
+（`electron` / `electron-builder` / `wait-on` / `concurrently` 的版本在 Step 4 落到根 catalog；这里直接 `catalog:` 引用。`dev` 脚本在 Task 9 会替换成 concurrently 版，这里先占位。）
 
 - [ ] **Step 2: 写 tsconfig**
 
@@ -155,14 +173,26 @@ export default tseslint.config(
 
 > 实现注意：先打开 `apps/signaling/eslint.config.mjs` 确认导入项与根 base 的实际写法，照抄结构，避免风格漂移。
 
-- [ ] **Step 4: 安装 Electron 工具链并落到 catalog**
+- [ ] **Step 4: 声明 Electron 工具链版本 + 容器内安装**
 
-```bash
-cd apps/desktop
-pnpm add -D electron@latest electron-builder@latest wait-on@latest
+依赖统一走容器（见顶部"开发环境"），**不在宿主 `pnpm add`**。先在根 `pnpm-workspace.yaml` 的 `catalog:` 末尾新增一组（版本号查 npmmirror 最新稳定版填入）：
+
+```yaml
+# ─── Desktop ───
+electron: '^<latest>'
+electron-builder: '^<latest>'
+wait-on: '^<latest>'
+concurrently: '^<latest>'
 ```
 
-然后把解析出的版本从 `apps/desktop/package.json` 抽到根 `pnpm-workspace.yaml` 的 `catalog:`（新增一组 `# ─── Desktop ───`），并把 `apps/desktop/package.json` 里这三个改成 `catalog:`。最后根目录 `pnpm install` 确认 lockfile 一致。
+然后重建依赖镜像并安装（`docker/Dockerfile.dev` 已写入 GUI 运行库 + `ELECTRON_MIRROR`/`ELECTRON_BUILDER_BINARIES_MIRROR`，electron 二进制走国内镜像）：
+
+```bash
+docker compose build         # 让 Dockerfile.dev 的 GUI 库 + Electron 镜像变量生效
+docker compose run --rm deps # 一次性安装整个 workspace（含 electron 二进制）
+```
+
+> 版本号确认：若拿不准，可先在容器内 `docker compose run --rm deps pnpm --filter @peerlink/desktop add -D electron@latest electron-builder@latest wait-on@latest concurrently@latest` 解析出真实版本，再把版本回填 catalog、改回 `catalog:`，重跑 `docker compose run --rm deps` 校验 lockfile 一致。
 
 - [ ] **Step 5: 临时最小 main 入口**
 
@@ -499,8 +529,14 @@ describe('resolveRendererPath', () => {
       '/app/renderer/index.html'
     );
   });
-  it('阻止目录穿越', () => {
+  it('阻止目录穿越（无扩展名 → 回退 index.html）', () => {
     expect(resolveRendererPath(ROOT, 'app://peerlink/../../etc/passwd')).toBe(
+      '/app/renderer/index.html'
+    );
+  });
+  it('编码穿越（%2e%2e + 扩展名）被 startsWith 守卫拦回 index.html', () => {
+    // URL 会折叠明文 ..，故用编码点构造解码后越界，专门验证 startsWith 守卫
+    expect(resolveRendererPath(ROOT, 'app://peerlink/%2e%2e/secret.js')).toBe(
       '/app/renderer/index.html'
     );
   });
@@ -520,7 +556,7 @@ Expected: FAIL，找不到 `./app-protocol`。
 import { readFile } from 'node:fs/promises';
 import { normalize, sep } from 'node:path';
 
-import { net, protocol } from 'electron';
+import { protocol } from 'electron';
 
 export const APP_SCHEME = 'app';
 const APP_ORIGIN = 'app://peerlink';
@@ -582,7 +618,7 @@ export function registerAppProtocol(rendererRoot: string): void {
 export { APP_ORIGIN };
 ```
 
-> 实现注意：`net` 导入若未使用请删除（避免 lint 报未用）。`protocol.handle` 是 Electron ≥25 的 API；若安装到更老版本需改用 `protocol.registerBufferProtocol`，但当前装的是 latest，无虞。
+> 实现注意：`protocol.handle` 是 Electron ≥25 的 API；若安装到更老版本需改用 `protocol.registerBufferProtocol`，但当前装的是 latest，无虞。
 
 - [ ] **Step 4: 运行验证通过**
 
@@ -624,6 +660,9 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // 提示音 / 振铃用 WebAudio + <audio>，且常在非用户手势时触发（来消息），
+      // 关掉自动播放手势限制，否则首次播放会被静默拦截。
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 
@@ -681,20 +720,37 @@ git commit -m "feat(desktop): app:// protocol resolution and main window load"
 ```ts
 import type { RuntimeIceConfig } from '@/lib/ice-config';
 
+/** 配置变更事件载荷（主进程保存后推送）。 */
+export interface BridgeConfig {
+  signalUrl: string;
+  signalDomain: string;
+  ice: RuntimeIceConfig;
+}
+
+/** 通知类型：来消息 vs 来电。 */
+export type NotifyKind = 'message' | 'call';
+
 /** 桌面壳经 preload 注入的桥。浏览器中为 undefined。 */
 export interface PeerlinkBridge {
-  /** 规范化后的 ws(s) 信令地址 */
+  /** 启动时的规范化 ws(s) 信令地址（运行时最新值用 getSignalUrl()） */
   readonly signalUrl: string;
-  /** 运行时 ICE 配置 */
+  /** 启动时的运行时 ICE 配置（运行时最新值用 getRuntimeIce()） */
   readonly ice: RuntimeIceConfig;
   /** 当前展示用的信令域名（裸域名） */
   readonly signalDomain: string;
-  /** 保存信令域名（保存后桌面端会重载窗口生效） */
+  /** 保存信令域名；主进程持久化后经 onConfigChange 推新值，**不重载窗口** */
   setSignalDomain(domain: string): Promise<void>;
-  /** 保存 ICE 配置 */
+  /** 保存 ICE 配置；同样经 onConfigChange 即时生效 */
   setIce(ice: RuntimeIceConfig): Promise<void>;
+  /** 配置变更回调：主进程保存后推最新配置 */
+  onConfigChange(cb: (cfg: BridgeConfig) => void): void;
   /** 请求弹一条原生通知 */
-  notify(payload: { title: string; body: string; sessionId: string }): void;
+  notify(payload: {
+    title: string;
+    body: string;
+    kind: NotifyKind;
+    sessionId: string;
+  }): void;
   /** 注册"用户点了通知/托盘要切到某会话"的回调 */
   onActivateSession(cb: (sessionId: string) => void): void;
 }
@@ -711,6 +767,34 @@ export function getBridge(): PeerlinkBridge | undefined {
 
 export function isDesktop(): boolean {
   return !!getBridge();
+}
+
+// ── 运行时配置 holder：保存设置后即时生效，避免 reload 摧毁会话/阅后即焚消息 ──
+let currentSignalUrl: string | undefined = getBridge()?.signalUrl;
+let currentIce: RuntimeIceConfig | undefined = getBridge()?.ice;
+let wired = false;
+
+/** 幂等地挂上 onConfigChange 订阅，把最新配置写进 holder。 */
+function ensureWired(): void {
+  const bridge = getBridge();
+  if (wired || !bridge) return;
+  wired = true;
+  bridge.onConfigChange(cfg => {
+    currentSignalUrl = cfg.signalUrl;
+    currentIce = cfg.ice;
+  });
+}
+
+/** 桌面端最新信令地址；浏览器返回 undefined。 */
+export function getSignalUrl(): string | undefined {
+  ensureWired();
+  return currentSignalUrl;
+}
+
+/** 桌面端最新 ICE 配置；浏览器返回 undefined。 */
+export function getRuntimeIce(): RuntimeIceConfig | undefined {
+  ensureWired();
+  return currentIce;
 }
 ```
 
@@ -743,18 +827,18 @@ Expected: FAIL（当前未读 `window.peerlink.ice`）。
 `apps/web/src/lib/ice-config.ts` 的 `iceServersFromEnv()` 开头加最高优先级分支：
 
 ```ts
+import { getRuntimeIce } from '@/lib/desktop-bridge';
+
 export function iceServersFromEnv(): RTCIceServer[] {
-  // 桌面端：preload 注入的 ICE 优先（绕开 ice-config.js 的 {} 覆盖）
-  const bridge = typeof window !== 'undefined' ? window.peerlink : undefined;
-  if (
-    bridge?.ice &&
-    (bridge.ice.stunUrls?.trim() || bridge.ice.turnUrl?.trim())
-  ) {
+  // 桌面端：运行时 holder 的 ICE 优先（绕开 ice-config.js 的 {} 覆盖；经
+  // onConfigChange 更新，改 ICE 后下次新建 peer 即用新值，无需 reload）
+  const ice = getRuntimeIce();
+  if (ice && (ice.stunUrls?.trim() || ice.turnUrl?.trim())) {
     return buildIceServers({
-      VITE_STUN_URLS: bridge.ice.stunUrls,
-      VITE_TURN_URL: bridge.ice.turnUrl,
-      VITE_TURN_USERNAME: bridge.ice.turnUsername,
-      VITE_TURN_CREDENTIAL: bridge.ice.turnCredential,
+      VITE_STUN_URLS: ice.stunUrls,
+      VITE_TURN_URL: ice.turnUrl,
+      VITE_TURN_USERNAME: ice.turnUsername,
+      VITE_TURN_CREDENTIAL: ice.turnCredential,
     });
   }
 
@@ -764,7 +848,7 @@ export function iceServersFromEnv(): RTCIceServer[] {
 }
 ```
 
-> `window.peerlink` 的类型来自新建的 `desktop-bridge.ts` 的 `declare global`；确保 `ice-config.ts` 所在编译上下文包含该声明（同属 `apps/web/src`，tsconfig `include: ["src"]` 已覆盖）。
+> 循环依赖说明：`desktop-bridge.ts` 仅 **type-only** import `RuntimeIceConfig`（编译后擦除），`ice-config.ts` 运行时 import `getRuntimeIce`——单向，无运行时循环。
 
 - [ ] **Step 5: 运行验证通过**
 
@@ -776,8 +860,11 @@ Expected: PASS。
 `apps/web/src/core/conversation.ts:487`：
 
 ```ts
+import { getSignalUrl } from '@/lib/desktop-bridge';
+
 function signalUrl(): string {
-  if (window.peerlink?.signalUrl) return window.peerlink.signalUrl; // 桌面端
+  const desktop = getSignalUrl();
+  if (desktop) return desktop; // 桌面端：运行时最新值，改设置后即时生效
   if (import.meta.env.VITE_SIGNAL_URL) return import.meta.env.VITE_SIGNAL_URL;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const path = import.meta.env.VITE_SIGNAL_PATH ?? '/signal';
@@ -785,7 +872,7 @@ function signalUrl(): string {
 }
 ```
 
-需在 `conversation.ts` 顶部加 `import '@/lib/desktop-bridge';`（仅为引入 `declare global` 的 `Window.peerlink` 类型；若 lint 报无用导入，改成 `import type {} from '@/lib/desktop-bridge';` 或在文件内 `/// <reference />`）。
+`getSignalUrl` 是具名导入，自带类型，无需再单独 `import` 仅为类型副作用。
 
 - [ ] **Step 7: 实现 preload**
 
@@ -806,6 +893,11 @@ ipcRenderer.on('peerlink:activate-session', (_e, sessionId: string) => {
   activateHandlers.forEach(cb => cb(sessionId));
 });
 
+const configHandlers = new Set<(cfg: unknown) => void>();
+ipcRenderer.on('peerlink:config-changed', (_e, cfg: unknown) => {
+  configHandlers.forEach(cb => cb(cfg));
+});
+
 contextBridge.exposeInMainWorld('peerlink', {
   signalUrl: bootstrap.signalUrl,
   signalDomain: bootstrap.signalDomain,
@@ -814,8 +906,15 @@ contextBridge.exposeInMainWorld('peerlink', {
     ipcRenderer.invoke('peerlink:set-signal-domain', domain),
   setIce: (ice: Record<string, string>) =>
     ipcRenderer.invoke('peerlink:set-ice', ice),
-  notify: (payload: { title: string; body: string; sessionId: string }) =>
-    ipcRenderer.send('peerlink:notify', payload),
+  onConfigChange: (cb: (cfg: unknown) => void) => {
+    configHandlers.add(cb);
+  },
+  notify: (payload: {
+    title: string;
+    body: string;
+    kind: 'message' | 'call';
+    sessionId: string;
+  }) => ipcRenderer.send('peerlink:notify', payload),
   onActivateSession: (cb: (sessionId: string) => void) => {
     activateHandlers.add(cb);
   },
@@ -829,25 +928,30 @@ contextBridge.exposeInMainWorld('peerlink', {
 ```ts
 import { domainFromSignalUrl } from './signal-url';
 // …
-ipcMain.on('peerlink:bootstrap', e => {
+function currentBootstrap() {
   const c = config.get();
-  e.returnValue = {
+  return {
     signalUrl: c.signalUrl,
     signalDomain: domainFromSignalUrl(c.signalUrl),
     ice: c.ice,
   };
+}
+
+ipcMain.on('peerlink:bootstrap', e => {
+  e.returnValue = currentBootstrap();
 });
 ipcMain.handle('peerlink:set-signal-domain', (_e, domain: string) => {
-  config.setSignalDomain(domain);
-  mainWindow?.reload(); // 重载使新地址在所有新连接生效
+  config.setSignalDomain(domain); // 可能抛错（空域名）→ reject 到 renderer
+  // 不 reload：推新配置给 renderer，下次建连即用新地址，活跃会话/消息存活
+  mainWindow?.webContents.send('peerlink:config-changed', currentBootstrap());
 });
 ipcMain.handle('peerlink:set-ice', (_e, ice) => {
   config.setIce(ice);
-  mainWindow?.reload();
+  mainWindow?.webContents.send('peerlink:config-changed', currentBootstrap());
 });
 ```
 
-（记得 `import { ipcMain } from 'electron'`。）
+（记得 `import { ipcMain } from 'electron'`。`set-signal-domain` 用 `handle`（返回 Promise），renderer 端 `await` 能捕获空域名等异常——见 Task 8 的错误处理。）
 
 - [ ] **Step 9: 验证前端测试 + 双端 typecheck**
 
@@ -1314,7 +1418,12 @@ git commit -m "feat(desktop): tray, close-to-tray background running, single-ins
 - Test: `apps/web/src/features/settings/desktop-notifications.spec.ts`
 - Modify: `apps/web/src/main.tsx`（启动时挂载通知订阅）
 
-设计：**前端决定"该不该打扰"，主进程负责"弹 + 点击激活"**。前端订阅 `conversation-store`（已有"仅非活跃会话 +unread"语义），当总 unread 增加且 `document.hasFocus()` 为 false 时，调用 `bridge.notify(...)` 并播放一段 WebAudio 提示音。主进程展示通知，点击 → `mainWindow.show()` + 发 `peerlink:activate-session`。把"是否应通知"的判断抽成纯函数测试。
+设计：**前端决定"该不该打扰"，主进程负责"弹 + 点击激活"**。前端订阅 `conversation-store`，两路通知：
+
+1. **来消息**：某会话 `unread` 增加，且不是「窗口聚焦且正停在该会话」时，`bridge.notify({ kind: 'message' })` + WebAudio 提示音。
+2. **来电**：某会话 `call` 进入「来电」（`state === 'ringing' && dir === 'in'`，store 实际字段，**无 `incoming` 这个值**），且窗口失焦/隐藏时，`bridge.notify({ kind: 'call' })`——振铃由 renderer 的 `ringtone.ts` 负责，这里负责「窗口看不见时也能弹系统通知点亮窗口去接听」。
+
+主进程展示通知，点击 → `mainWindow.show()` + 发 `peerlink:activate-session`。把"是否应通知"的判断抽成纯函数测试。
 
 - [ ] **Step 1: 写失败测试（前端纯判断）**
 
@@ -1326,25 +1435,30 @@ import { describe, expect, it } from 'vitest';
 import { shouldNotify } from './desktop-notifications';
 
 describe('shouldNotify', () => {
+  const base = {
+    prevUnread: 0,
+    nextUnread: 1,
+    focused: false,
+    isActiveSession: false,
+  };
   it('unread 增加且窗口失焦时通知', () => {
-    expect(shouldNotify({ prevUnread: 0, nextUnread: 1, focused: false })).toBe(
-      true
-    );
+    expect(shouldNotify(base)).toBe(true);
   });
-  it('窗口有焦点时不通知', () => {
-    expect(shouldNotify({ prevUnread: 0, nextUnread: 1, focused: true })).toBe(
-      false
-    );
+  it('聚焦且正停在该会话时不打扰', () => {
+    expect(
+      shouldNotify({ ...base, focused: true, isActiveSession: true })
+    ).toBe(false);
+  });
+  it('虽聚焦但消息来自非活跃会话时仍通知', () => {
+    expect(
+      shouldNotify({ ...base, focused: true, isActiveSession: false })
+    ).toBe(true);
   });
   it('unread 未增加时不通知', () => {
-    expect(shouldNotify({ prevUnread: 2, nextUnread: 2, focused: false })).toBe(
-      false
-    );
+    expect(shouldNotify({ ...base, prevUnread: 2, nextUnread: 2 })).toBe(false);
   });
   it('unread 减少（已读）时不通知', () => {
-    expect(shouldNotify({ prevUnread: 3, nextUnread: 1, focused: false })).toBe(
-      false
-    );
+    expect(shouldNotify({ ...base, prevUnread: 3, nextUnread: 1 })).toBe(false);
   });
 });
 ```
@@ -1360,27 +1474,43 @@ Expected: FAIL，找不到 `./desktop-notifications`。
 
 ```ts
 import { getBridge } from '@/lib/desktop-bridge';
+import type { Session } from '@/state/conversation-store';
 import { useRoomsStore } from '@/state/conversation-store';
 
 export function shouldNotify(args: {
   prevUnread: number;
   nextUnread: number;
   focused: boolean;
+  isActiveSession: boolean;
 }): boolean {
-  return args.nextUnread > args.prevUnread && !args.focused;
+  // 未读增加，且不是「窗口聚焦且正停在该会话」
+  return (
+    args.nextUnread > args.prevUnread && !(args.focused && args.isActiveSession)
+  );
 }
 
-function totalUnread(sessions: Record<string, { unread: number }>): number {
+type Sessions = Record<string, Session>;
+
+function totalUnread(sessions: Sessions): number {
   return Object.values(sessions).reduce((sum, s) => sum + s.unread, 0);
 }
 
-/** 找出 unread 刚增加的那条会话（用于通知点击跳转）。 */
-function bumpedSessionId(
-  prev: Record<string, { unread: number }>,
-  next: Record<string, { unread: number }>
-): string | undefined {
+/** 找出 unread 刚增加的那条会话（用于通知点击跳转 + 判断是否活跃）。 */
+function bumpedSessionId(prev: Sessions, next: Sessions): string | undefined {
   return Object.keys(next).find(
     id => (next[id]?.unread ?? 0) > (prev[id]?.unread ?? 0)
+  );
+}
+
+/** 找出刚进入「来电」的会话：state==='ringing' && dir==='in'。 */
+function incomingCallSessionId(
+  prev: Sessions,
+  next: Sessions
+): string | undefined {
+  const ringingIn = (s?: Session) =>
+    s?.call.state === 'ringing' && s.call.dir === 'in';
+  return Object.keys(next).find(
+    id => ringingIn(next[id]) && !ringingIn(prev[id])
   );
 }
 
@@ -1415,25 +1545,45 @@ export function installDesktopNotifications(): void {
   let prev = useRoomsStore.getState().sessions;
   useRoomsStore.subscribe(state => {
     const next = state.sessions;
+    const focused = document.hasFocus();
+
+    // ① 来消息
+    const msgId = bumpedSessionId(prev, next);
     if (
+      msgId &&
       shouldNotify({
         prevUnread: totalUnread(prev),
         nextUnread: totalUnread(next),
-        focused: document.hasFocus(),
+        focused,
+        isActiveSession: msgId === state.activeId,
       })
     ) {
-      const id = bumpedSessionId(prev, next);
-      if (id) {
-        bridge.notify({ title: 'PeerLink', body: '收到新消息', sessionId: id });
-        playBeep();
-      }
+      bridge.notify({
+        title: 'PeerLink',
+        body: '收到新消息',
+        kind: 'message',
+        sessionId: msgId,
+      });
+      playBeep();
     }
+
+    // ② 来电（窗口看不见时才弹；可见时 CallPanel 已经在闪了）
+    const callId = incomingCallSessionId(prev, next);
+    if (callId && !focused) {
+      bridge.notify({
+        title: 'PeerLink',
+        body: '来电…',
+        kind: 'call',
+        sessionId: callId,
+      });
+    }
+
     prev = next;
   });
 }
 ```
 
-> 实现注意：确认 `conversation-store` 暴露 `sessions: Record<string, { unread: number; … }>` 与 `setActive(id)`（已确认存在）。`useRoomsStore.subscribe` 是 zustand 标准 API。
+> 实现注意：`Session` / `useRoomsStore` / `setActive` / `activeId` / `call.{state,dir}` 均已确认存在于 `conversation-store.ts`。`useRoomsStore.subscribe` 是 zustand 标准 API。
 
 - [ ] **Step 4: 运行验证通过**
 
@@ -1506,7 +1656,7 @@ git commit -m "feat(desktop): native notifications + beep on incoming message"
 - Create: `apps/web/src/features/settings/SettingsPanel.tsx`
 - Modify: Inbox 顶部区域接入设置入口（实现时先 `grep -rn "Inbox" apps/web/src/features` 定位实际文件，常见为 `apps/web/src/features/inbox/Inbox.tsx`）
 
-设置面板仅在 `isDesktop()` 为真时渲染入口。改信令域名 + ICE/TURN，保存调 `bridge.setSignalDomain` / `bridge.setIce`（主进程保存后重载窗口生效）。React 19 约定：无 forwardRef、`ref` 当普通 prop、named import。
+设置面板仅在 `isDesktop()` 为真时渲染入口。改信令域名 + ICE/TURN，保存调 `bridge.setSignalDomain` / `bridge.setIce`（主进程持久化后经 `onConfigChange` 即时生效，**不重载窗口**，活跃会话存活）。空域名等异常由 `save()` 捕获并提示，失败不关闭面板。React 19 约定：无 forwardRef、`ref` 当普通 prop、named import。
 
 - [ ] **Step 1: 实现设置面板组件**
 
@@ -1525,18 +1675,27 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [turnUser, setTurnUser] = useState(bridge?.ice.turnUsername ?? '');
   const [turnCred, setTurnCred] = useState(bridge?.ice.turnCredential ?? '');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!bridge) return null;
 
   async function save() {
     setSaving(true);
-    await bridge!.setIce({
-      stunUrls: stun,
-      turnUrl,
-      turnUsername: turnUser,
-      turnCredential: turnCred,
-    });
-    await bridge!.setSignalDomain(domain); // 最后存域名 → 触发重载
+    setError(null);
+    try {
+      await bridge!.setIce({
+        stunUrls: stun,
+        turnUrl,
+        turnUsername: turnUser,
+        turnCredential: turnCred,
+      });
+      await bridge!.setSignalDomain(domain); // 经 onConfigChange 即时生效，不重载
+      onClose(); // 成功才关闭
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存失败，请检查域名格式');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -1583,6 +1742,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             onChange={e => setTurnCred(e.target.value)}
           />
         </div>
+
+        {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <button className="rounded-md px-4 py-2 text-muted" onClick={onClose}>
@@ -1724,13 +1885,9 @@ build().catch(err => {
 
 > 注意：`tray.ts` 里 `join(__dirname, 'tray-icon.png')`、`screen-picker.ts` 里 `picker.html`/`picker-preload.cjs` 都解析到 `dist/`，与上面拷贝目标一致。
 
-- [ ] **Step 2: 安装 concurrently，改 dev/build 脚本**
+- [ ] **Step 2: 改 dev/build 脚本**
 
-```bash
-cd apps/desktop && pnpm add -D concurrently@latest
-```
-
-把 `apps/desktop/package.json` scripts 改为：
+`concurrently` 已在 catalog（Task 0 Step 4），无需再装。把 `apps/desktop/package.json` scripts 改为：
 
 ```jsonc
 {
@@ -1746,23 +1903,28 @@ cd apps/desktop && pnpm add -D concurrently@latest
 }
 ```
 
-把 `concurrently` 提到 catalog（同 Task 0 Step 4 做法）。
+> 容器内运行：`dev` 由 compose `desktop` 服务的 `command: pnpm --filter @peerlink/desktop dev` 拉起，三个并行进程都在该容器内——vite 监听容器 `0.0.0.0:5173`，electron 同容器连 `localhost:5173`（`main` 的 `DEV_URL`），HMR 同源正常。electron 的 sandbox 由 compose 的 `ELECTRON_DISABLE_SANDBOX=1` 关掉，脚本里 `electron .` 不必加 `--no-sandbox`。（这套 dev 用 desktop 容器自带的 web vite，与浏览器测试用的 `web` 服务互不干扰。）
 
-- [ ] **Step 3: 本地冒烟（dev）**
+- [ ] **Step 3: 容器内冒烟（dev）**
 
-Run: `pnpm --filter @peerlink/desktop dev`
-Expected: Vite 起在 5173、esbuild 产出 `dist/main.cjs`、Electron 窗口打开并加载 dev 前端。手动确认：窗口出现、能进入应用 UI。
-（信令默认指向 `peerlink.qinjiapeng.com`；本地若无该服务，连接失败属预期，UI 仍应渲染。）
+Run: `docker compose --profile desktop up desktop`
+Expected: 容器内 Vite 起在 5173、esbuild 产出 `dist/main.cjs`、electron 启动并经 WSLg 在真实 WSL/Windows 桌面弹窗加载 dev 前端。
 
-- [ ] **Step 4: 本地冒烟（prod 加载路径）**
+- 编排侧可读：`docker compose logs -f desktop` 看 vite ready / esbuild 产出 / electron 主进程日志 / IPC，确认无启动崩溃（GUI 看不见也能据此判断壳是否跑通）。
+- 真机确认（你来看）：窗口出现、能进入应用 UI。
+- （信令默认指向 `peerlink.qinjiapeng.com`；要本地端到端，在设置面板把信令域名填成本地 signaling 容器——同网络下 `signaling:3001` 或经 Traefik。无本地服务时连接失败属预期，UI 仍应渲染。）
+
+- [ ] **Step 4: 容器内冒烟（prod `app://` 加载路径，可选）**
+
+未打包时 `app.isPackaged` 为 false 会走 dev URL。要单独验证 `app://` 加载，临时在 `index.ts` 用环境变量 `FORCE_PROD=1` 强制走 `APP_ORIGIN`：
 
 ```bash
-pnpm --filter @peerlink/web build
-pnpm --filter @peerlink/desktop build
-cd apps/desktop && npx electron . # app.isPackaged 为 false 仍走 DEV_URL；
+docker compose run --rm deps pnpm --filter @peerlink/web build
+docker compose run --rm deps pnpm --filter @peerlink/desktop build
+# 然后在 desktop 服务的 environment 临时加 FORCE_PROD=1 起 desktop 验证，验证后移除
 ```
 
-> 注意：未打包时 `app.isPackaged` 为 false 会走 dev URL。要单独验证 `app://` 加载，可临时在 `index.ts` 用环境变量 `FORCE_PROD=1` 强制走 `APP_ORIGIN`，验证后移除。这一步可选，主验证留给 Task 10 的真实打包产物。
+> 这一步可选；`app://` 协议的主验证留给 Task 10/11 的真实打包产物。
 
 - [ ] **Step 5: Commit**
 
@@ -1818,12 +1980,14 @@ linux:
 
 > `files` 仅含 `dist/**` + `package.json`：main/preload/picker/renderer 全在 `dist`。`node_modules` 不必显式列（electron-builder 自动纳入生产依赖；本包运行时无第三方依赖，纯 Electron API）。
 
-- [ ] **Step 2: 本地打当前平台包验证**
+- [ ] **Step 2: 容器内出 Linux 包验证**
 
-Run（在 Linux 开发机）：`pnpm --filter @peerlink/desktop dist`
-Expected: `apps/desktop/release/` 下生成 `.AppImage` 与 `.deb`。安装/运行 AppImage：窗口打开、加载打包进去的前端（`app://`）、UI 正常渲染。
+electron-builder 打包是纯文件操作、不需 GUI，可在容器内出 Linux 包：
 
-> macOS/Windows 产物需在对应 OS 或 CI matrix 上构建（Task 11）。本地仅验证当前平台。
+Run: `docker compose run --rm deps sh -lc "pnpm --filter @peerlink/web build && pnpm --filter @peerlink/desktop build && pnpm --filter @peerlink/desktop exec electron-builder --linux"`
+Expected: `apps/desktop/release/` 下生成 `.AppImage` 与 `.deb`（electron-builder 二进制走 Dockerfile.dev 的 `ELECTRON_BUILDER_BINARIES_MIRROR`）。
+
+> macOS（universal）/ Windows 产物由 **CI matrix** 出（Task 11，已选定方案）——容器无显示，且 mac 包必须在 macOS。运行 AppImage 看窗口、各平台冒烟由你真机做。
 
 - [ ] **Step 3: 冒烟核对（当前平台真实产物）**
 
@@ -1893,6 +2057,8 @@ jobs:
           files: apps/desktop/release/*.{AppImage,deb,dmg,exe}
 ```
 
+> CI 镜像与依赖：GitHub runner 网络通畅，`pnpm install` 下载 electron 二进制走默认源即可，**无需 npmmirror**（npmmirror 仅为容器内开发设；CI 不复用本地 dev 镜像）。
+>
 > Phase 1 不签名：macOS/Windows 产物未签名（用户首次打开需绕过 Gatekeeper / SmartScreen）。签名与 electron-updater 自动更新归 Phase 2。
 
 - [ ] **Step 3: 提交（不触发发布，仅入库）**
@@ -1908,7 +2074,9 @@ git commit -m "ci(desktop): matrix build + release workflow on version tags"
 
 ## Self-Review 记录
 
-- **Spec 覆盖**：选型(Electron)✓Task 全程；不 fork 前端✓Task4；app://加载✓Task3；bridge✓Task4；配置存储+域名规范化✓Task1/2；window.peerlink 注入(绕开 ice-config.js 覆盖)✓Task4；设置面板(仅桌面)✓Task8；屏幕选择器(自带+macOS系统)✓Task5；托盘后台常驻+单实例✓Task6；原生通知+声音✓Task7；electron-builder 三平台(mac universal / linux AppImage+deb)✓Task10；CI tag 触发✓Task11；签名/自动更新归 Phase2✓Task10/11 注明；协议层不变✓全程未触碰 `packages/protocol`/`apps/signaling`。
+- **Spec 覆盖**：选型(Electron)✓Task 全程；不 fork 前端✓Task4；app://加载✓Task3；bridge✓Task4；配置存储+域名规范化✓Task1/2；window.peerlink 注入(绕开 ice-config.js 覆盖)✓Task4；设置面板(仅桌面)✓Task8；屏幕选择器(自带+macOS系统)✓Task5；托盘后台常驻+单实例✓Task6；原生通知+声音(来消息+来电)✓Task7；electron-builder 三平台(mac universal / linux AppImage+deb)✓Task10；CI tag 触发✓Task11；签名/自动更新归 Phase2✓Task10/11 注明；协议层不变✓全程未触碰 `packages/protocol`/`apps/signaling`。
+- **本轮评审修订（已并入计划）**：① 配置变更**不再 `reload()`**，改主进程 `peerlink:config-changed` 推送 + `desktop-bridge` 运行时 holder（`getSignalUrl`/`getRuntimeIce`），保活活跃会话与纯内存阅后即焚消息（决策 5 / Task 4）；② 通知补**来电**路径——store 实为 `call.state==='ringing' && dir==='in'`（无 `incoming` 值），`notify` 带 `kind`（决策 6 / Task 7）；③ `shouldNotify` 结合 `isActiveSession`，聚焦但非当前会话仍通知；④ WebAudio 提示音加 `autoplayPolicy: 'no-user-gesture-required'`（Task 3）；⑤ `SettingsPanel.save` 加 try/catch/finally + 成功才 `onClose`（Task 8）；⑥ 删 `app-protocol` 未用 `net` import + 补「编码穿越」守卫用例（Task 3）；⑦ design 文档 Vite `base` 写法勘误（决策 2）。
+- **开发环境（本轮新增）**：容器内开发——依赖经 `deps` 容器安装（electron 二进制走 npmmirror，`Dockerfile.dev` 已配 GUI 库 + 镜像变量）；桌面壳经 `docker compose --profile desktop up desktop` 在容器内跑、GUI 经 **WSLg socket** 显示、日志 `docker compose logs -f desktop` 读取；命令一律容器内执行（顶部"命令约定"）；出包走 **CI matrix**，本地容器仅出 Linux 包。`docker/Dockerfile.dev` + `docker-compose.yml` 的 `desktop` 服务已落地。
+- **类型一致性**：`PeerlinkBridge`(Task4) 与 preload 暴露面(Task4 Step7)、SettingsPanel(Task8)、desktop-notifications(Task7) 字段一致（signalUrl/signalDomain/ice/setSignalDomain/setIce/**onConfigChange**/**notify(kind)**/onActivateSession）；`ConfigStore`(Task2) 的 `get/setSignalDomain/setIce` 与主进程 IPC(Task4 Step8) 一致；`installScreenPicker`/`toPickerItems`(Task5) 与接线一致；`Session.call.{state,dir}`/`activeId`(Task7) 已对齐 `conversation-store.ts` 真实定义。
 - **占位符**：无 TBD；每个改动步骤含真实代码与命令。
-- **类型一致性**：`PeerlinkBridge`(Task4) 与 preload 暴露面(Task4 Step7)、SettingsPanel 调用(Task8) 字段一致（signalUrl/signalDomain/ice/setSignalDomain/setIce/notify/onActivateSession）；`ConfigStore`(Task2) 的 `get/setSignalDomain/setIce` 与主进程 IPC(Task4 Step8) 调用一致；`installScreenPicker`/`toPickerItems`(Task5) 与接线一致。
-- **已知需实现期核对的点**（计划内已标注）：Inbox 实际文件名、主题 token 名称、`apps/signaling` 的 esbuild/eslint 写法风格、Electron latest 版本下 `protocol.handle` 可用性。
+- **已知需实现期/真机核对的点**：Inbox 实际文件名、主题 token 名称、`apps/signaling` 的 esbuild/eslint 写法风格、Electron latest 下 `protocol.handle` 可用性、catalog 里 Desktop 四项的真实版本号、**真实 WSL 的 WSLg 路径/`DISPLAY`/PulseServer**（沙箱探测不代表真机，以真机为准）、屏幕共享/托盘/音频真机复核。
