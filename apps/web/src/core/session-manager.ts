@@ -261,6 +261,20 @@ export class SessionManager {
     this.store.updateFileStatus(id, transferId, 'rejected');
   }
 
+  /**
+   * 注册页面卸载守卫：关页 / 切到后台时释放全部会话资源（RTCPeerConnection、
+   * 麦克风与屏幕轨、远端音频、ringtone），并让对端通过 P2P 断开尽快感知，
+   * 而非干等 grace 超时。用 pagehide（比 beforeunload 在移动端更可靠）。
+   * 可注入 target 便于测试。
+   */
+  installUnloadGuard(
+    target: {
+      addEventListener(type: string, listener: () => void): void;
+    } = window
+  ): void {
+    target.addEventListener('pagehide', () => this.closeAll());
+  }
+
   closeAll(): void {
     for (const handle of this.handles.values()) handle.close();
     for (const id of [...this.audioEls.keys()]) this.stopRemote(id);

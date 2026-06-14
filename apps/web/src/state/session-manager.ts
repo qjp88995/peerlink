@@ -45,3 +45,7 @@ export const sessionManager = new SessionManager({
     if (state === 'error') toast.error('连接出错');
   },
 });
+
+// 关页 / 切后台时释放所有 P2P 连接与媒体轨，避免麦克风/摄像头占用残留、
+// 让对端尽快得知断开。仅在浏览器环境注册（SSR/测试无 window 时跳过）。
+if (typeof window !== 'undefined') sessionManager.installUnloadGuard();

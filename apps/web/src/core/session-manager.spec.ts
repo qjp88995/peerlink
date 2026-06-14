@@ -88,6 +88,35 @@ describe('SessionManager', () => {
     expect(store.setConnection).toHaveBeenCalledWith('id1', 'connected');
   });
 
+  it('installUnloadGuard closes every session when the page is hidden', () => {
+    const store = makeStore();
+    const closeSpy = vi.fn();
+    const start: Start = () => fakeHandle({ close: closeSpy });
+    let n = 0;
+    const mgr = new SessionManager({
+      store: store as unknown as SessionStore,
+      start,
+      genId: () => `id${++n}`,
+    });
+
+    let fire: () => void = () => {};
+    const target = {
+      addEventListener: vi.fn((_t: string, h: () => void) => {
+        fire = h;
+      }),
+    };
+    mgr.installUnloadGuard(target);
+    mgr.create();
+    mgr.create();
+
+    expect(target.addEventListener).toHaveBeenCalledWith(
+      'pagehide',
+      expect.any(Function)
+    );
+    fire(); // 模拟页面卸载
+    expect(closeSpy).toHaveBeenCalledTimes(2); // 两条会话都被释放
+  });
+
   it('dedupes join by roomId and re-activates', () => {
     const store = makeStore();
     const start: Start = () => fakeHandle();
