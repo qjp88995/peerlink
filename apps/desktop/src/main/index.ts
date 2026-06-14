@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 
 import {
   APP_ORIGIN,
@@ -24,6 +24,10 @@ if (process.env.ELECTRON_DISABLE_SANDBOX === '1') {
 }
 
 registerSchemePrivileges();
+
+// 隐藏默认菜单栏：PeerLink 自带托盘 + 应用内 UI，无需 Electron 原生菜单。
+// 置 null 同时去掉默认快捷键菜单（Windows/Linux 移除菜单栏，macOS 清空应用菜单）。
+Menu.setApplicationMenu(null);
 
 let mainWindow: BrowserWindow | undefined;
 let config: ConfigStore;
