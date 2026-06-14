@@ -433,9 +433,19 @@ export class Conversation {
             this.cb.onProgress?.(msg.transferId, sent, total)
           ),
         });
-        await sender.streamAll();
-        this.active.delete(msg.transferId);
-        this.cb.onTransferDone?.(msg.transferId);
+        try {
+          await sender.streamAll();
+          this.active.delete(msg.transferId);
+          this.cb.onTransferDone?.(msg.transferId);
+        } catch (err) {
+          // 流式读取/发送中途失败（文件被删、磁盘错误、通道关闭）：
+          // 清理活跃集合并告知 UI，避免传输永远卡在「进行中」。
+          this.active.delete(msg.transferId);
+          this.cb.onTransferFailed?.(
+            msg.transferId,
+            err instanceof Error ? err.message : '发送失败'
+          );
+        }
         return;
       }
       case 'reject':

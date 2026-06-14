@@ -189,6 +189,33 @@ describe('Conversation — outgoing file handshake', () => {
     expect(cb.onTransferDone).toHaveBeenCalledWith(out.transferId);
   });
 
+  it('marks the transfer failed (not hung) when streaming throws', async () => {
+    const { conv, cb } = setup();
+    // slice 抛错模拟文件读取中途失败（如文件被删、磁盘错误）。
+    const broken = {
+      name: 'x.bin',
+      size: 4,
+      webkitRelativePath: '',
+      slice: () => ({
+        arrayBuffer: async () => {
+          throw new Error('disk gone');
+        },
+      }),
+    } as unknown as File;
+    const out = conv.sendFiles([broken]);
+
+    await conv.handleIncoming(
+      encodeControlFrame({ type: 'accept', transferId: out.transferId })
+    );
+
+    expect(cb.onTransferStart).toHaveBeenCalledWith(out.transferId);
+    expect(cb.onTransferFailed).toHaveBeenCalledWith(
+      out.transferId,
+      expect.any(String)
+    );
+    expect(cb.onTransferDone).not.toHaveBeenCalled();
+  });
+
   it('peer reject marks the outgoing transfer rejected', async () => {
     const { conv, cb } = setup();
     const out = conv.sendFiles([fileBlob('a.bin', [1])]);
