@@ -1,6 +1,6 @@
 name: Checks
 
-# 可复用的质量门禁：lint / typecheck / test 矩阵 + 生产依赖审计。
+# 可复用的质量门禁：lint / typecheck / test 矩阵 + 生产构建 + 生产依赖审计。
 # 由 ci.yml（PR）、docker-staging.yml（push main）、docker-publish.yml（tag）调用，
 # 保证「镜像/产物只在检查通过后才构建」，逻辑只写一份、不重复跑。
 on:
@@ -27,6 +27,23 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  # 单独验证生产构建（Vite + esbuild bundle）。typecheck ≠ 真实打包；
+  # 此前只有打 tag 发镜像时才第一次构建，bundle 失败要到发版才暴露。
+  # 单 Node 版本即可（不随 check 矩阵翻倍）。
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
 
   audit:
     runs-on: ubuntu-latest
