@@ -16,6 +16,13 @@ import { setupTray, wireCloseToTray } from './tray';
 const isDev = !app.isPackaged;
 const DEV_URL = 'http://localhost:5173';
 
+// 容器内（compose 设了 ELECTRON_DISABLE_SANDBOX）没有 setuid sandbox，
+// electron 42 起该 env 已不足以禁用——补可靠的 CLI 开关，否则 Chromium
+// 起 sandbox 失败直接 SIGTRAP 崩溃。生产打包不设此 env，sandbox 姿势不变。
+if (process.env.ELECTRON_DISABLE_SANDBOX === '1') {
+  app.commandLine.appendSwitch('no-sandbox');
+}
+
 registerSchemePrivileges();
 
 let mainWindow: BrowserWindow | undefined;
