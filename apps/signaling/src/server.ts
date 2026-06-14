@@ -17,6 +17,8 @@ interface Client {
   peerId: string;
   socket: WebSocket;
   ipGroup: string;
+  /** 上一个心跳周期内是否收到过 pong；连续两周期为 false 即回收。 */
+  isAlive: boolean;
 }
 
 export class SignalingServer {
@@ -26,6 +28,7 @@ export class SignalingServer {
   private lan = new LanRegistry();
   private clients = new Map<string, Client>();
   private reapTimer?: ReturnType<typeof setInterval>;
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private config: SignalingConfig,
@@ -33,7 +36,13 @@ export class SignalingServer {
   ) {
     this.rooms = new RoomManager({ ttlMs: config.roomTtlMs });
     this.http = createServer();
-    this.wss = new WebSocketServer({ server: this.http, path: config.path });
+    this.wss = new WebSocketServer({
+      server: this.http,
+      path: config.path,
+      maxPayload: config.maxPayloadBytes,
+      verifyClient: (info: { origin: string }) =>
+        this.isOriginAllowed(info.origin),
+    });
     this.wss.on('connection', (socket, req) => {
       const ipGroup = (
         (req.headers['x-forwarded-for'] as string)?.split(',')[0] ??
@@ -51,6 +60,10 @@ export class SignalingServer {
           () => this.rooms.reap(),
           this.config.reapIntervalMs
         );
+        this.heartbeatTimer = setInterval(
+          () => this.sweepDeadConnections(),
+          this.config.heartbeatIntervalMs
+        );
         this.log.info({ port: this.config.port }, 'signaling listening');
         resolve();
       });
@@ -59,8 +72,28 @@ export class SignalingServer {
 
   async close(): Promise<void> {
     if (this.reapTimer) clearInterval(this.reapTimer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     await new Promise<void>(r => this.wss.close(() => r()));
     await new Promise<void>(r => this.http.close(() => r()));
+  }
+
+  /** 白名单为空时放行任意来源；否则只接受清单内的 Origin。 */
+  private isOriginAllowed(origin: string | undefined): boolean {
+    const allow = this.config.allowedOrigins;
+    if (!allow) return true;
+    return origin !== undefined && allow.includes(origin);
+  }
+
+  /** 每个心跳周期：回收无 pong 的连接，向存活连接发新 ping。 */
+  private sweepDeadConnections(): void {
+    for (const client of this.clients.values()) {
+      if (!client.isAlive) {
+        client.socket.terminate();
+        continue;
+      }
+      client.isAlive = false;
+      client.socket.ping();
+    }
   }
 
   /** 测试辅助：返回实际监听端口。 */
@@ -72,11 +105,14 @@ export class SignalingServer {
   private onConnection(socket: WebSocket, ipGroup: string): void {
     const peerId = randomUUID();
     const name = generateDeviceName();
-    const client: Client = { peerId, socket, ipGroup };
+    const client: Client = { peerId, socket, ipGroup, isAlive: true };
     this.clients.set(peerId, client);
     this.lan.add(peerId, ipGroup, name);
     this.broadcastLanPeers(peerId);
 
+    socket.on('pong', () => {
+      client.isAlive = true;
+    });
     socket.on('message', raw => this.onMessage(client, raw.toString()));
     socket.on('close', () => this.onClose(client));
     socket.on('error', () => this.onClose(client));

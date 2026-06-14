@@ -8,16 +8,32 @@ import { SignalingServer } from './server';
 let server: SignalingServer;
 let url: string;
 
-beforeEach(async () => {
-  const config = { ...loadConfig(), port: 0, reapIntervalMs: 60_000 };
-  server = new SignalingServer(config, {
-    info() {},
-    error() {},
-    warn() {},
-    debug() {},
-  } as never);
+const silentLogger = {
+  info() {},
+  error() {},
+  warn() {},
+  debug() {},
+} as never;
+
+/** 用给定的配置覆盖重启服务，返回最终配置。 */
+async function restart(
+  overrides: Partial<ReturnType<typeof loadConfig>> = {}
+): Promise<ReturnType<typeof loadConfig>> {
+  if (server) await server.close();
+  const config = {
+    ...loadConfig(),
+    port: 0,
+    reapIntervalMs: 60_000,
+    ...overrides,
+  };
+  server = new SignalingServer(config, silentLogger);
   await server.listen();
   url = `ws://127.0.0.1:${server.port}${config.path}`;
+  return config;
+}
+
+beforeEach(async () => {
+  await restart();
 });
 
 afterEach(async () => {
@@ -98,6 +114,60 @@ describe('SignalingServer', () => {
     const e = (await err) as Extract<ServerMessage, { type: 'error' }>;
     expect(e.code).toBe('BAD_MESSAGE');
     ws.close();
+  });
+
+  it('closes a connection that exceeds maxPayload', async () => {
+    const config = await restart({ maxPayloadBytes: 64 });
+    expect(config.maxPayloadBytes).toBe(64);
+    const ws = await connect();
+    const closed = new Promise<number>(resolve =>
+      ws.on('close', code => resolve(code))
+    );
+    ws.send(
+      JSON.stringify({
+        type: 'signal',
+        to: 'x',
+        payload: { sdp: 'A'.repeat(500) },
+      })
+    );
+    expect(await closed).toBe(1009); // RFC6455 Message Too Big
+  });
+
+  it('rejects a disallowed Origin when an allowlist is set', async () => {
+    await restart({ allowedOrigins: ['https://peer.example'] });
+    const ws = new WebSocket(url, {
+      headers: { origin: 'https://evil.example' },
+    });
+    const outcome = await new Promise<string>(resolve => {
+      ws.on('open', () => resolve('open'));
+      ws.on('error', () => resolve('rejected'));
+      ws.on('unexpected-response', () => resolve('rejected'));
+    });
+    expect(outcome).toBe('rejected');
+  });
+
+  it('allows a permitted Origin', async () => {
+    await restart({ allowedOrigins: ['https://peer.example'] });
+    const ws = new WebSocket(url, {
+      headers: { origin: 'https://peer.example' },
+    });
+    const outcome = await new Promise<string>(resolve => {
+      ws.on('open', () => resolve('open'));
+      ws.on('error', () => resolve('rejected'));
+    });
+    expect(outcome).toBe('open');
+    ws.close();
+  });
+
+  it('terminates a connection that stops answering pings', async () => {
+    await restart({ heartbeatIntervalMs: 40 });
+    const ws = new WebSocket(url, { autoPong: false });
+    await new Promise(resolve => ws.on('open', resolve));
+    const closed = await new Promise<boolean>(resolve => {
+      ws.on('close', () => resolve(true));
+      setTimeout(() => resolve(false), 1000);
+    });
+    expect(closed).toBe(true);
   });
 
   it('notifies the remaining peer when the other disconnects', async () => {
