@@ -1,0 +1,43 @@
+name: Checks
+
+# 可复用的质量门禁：lint / typecheck / test 矩阵 + 生产依赖审计。
+# 由 ci.yml（PR）、docker-staging.yml（push main）、docker-publish.yml（tag）调用，
+# 保证「镜像/产物只在检查通过后才构建」，逻辑只写一份、不重复跑。
+on:
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # 覆盖 package.json engines (>=22) 的两端：当前 LTS 与开发主用版本
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # 仅审计生产依赖，high/critical 才阻断；走官方源以确保 advisory API 可用。
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high --registry=https://registry.npmjs.org/
