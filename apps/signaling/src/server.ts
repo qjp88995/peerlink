@@ -38,7 +38,19 @@ export class SignalingServer {
     private log: Logger
   ) {
     this.rooms = new RoomManager({ ttlMs: config.roomTtlMs });
-    this.http = createServer();
+    // 普通 HTTP 请求：仅暴露健康检查（供容器 HEALTHCHECK / 反代探活），
+    // 其余路径 404。WebSocket 升级请求由 WebSocketServer 在 path 上接管。
+    this.http = createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/healthz') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({ status: 'ok', connections: this.clients.size })
+        );
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
     this.wss = new WebSocketServer({
       server: this.http,
       path: config.path,

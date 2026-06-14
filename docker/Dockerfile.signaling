@@ -33,4 +33,7 @@ COPY --from=build --chown=node:node /app/deployed/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/apps/signaling/dist/server.mjs ./server.mjs
 USER node
 EXPOSE 3001
+# 用 node 内联 fetch 探活 /healthz（Node 24 自带 fetch，无需在精简镜像里装 curl）。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server.mjs"]

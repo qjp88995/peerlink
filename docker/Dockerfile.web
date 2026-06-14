@@ -29,3 +29,6 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/40-peerlink-ice-config.sh /docker-entrypoint.d/40-peerlink-ice-config.sh
 RUN chmod +x /docker-entrypoint.d/40-peerlink-ice-config.sh
 EXPOSE 80
+# busybox wget 自带于 nginx:alpine；探活根路径（SPA index.html）。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1

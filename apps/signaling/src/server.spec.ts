@@ -201,4 +201,16 @@ describe('SignalingServer', () => {
     expect(e.code).toBe('RATE_LIMITED');
     ws.close();
   });
+
+  it('serves a JSON health check on /healthz', async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/healthz`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe('ok');
+  });
+
+  it('returns 404 for unknown http paths', async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/nope`);
+    expect(res.status).toBe(404);
+  });
 });
