@@ -8,8 +8,20 @@ ARG GID=1000
 RUN groupmod -g "${GID}" node 2>/dev/null || true; \
     usermod -u "${UID}" -g "${GID}" node 2>/dev/null || true
 
+# Electron 桌面壳（apps/desktop）在容器内跑 GUI 时所需的运行库。
+# web/signaling 服务用不到，仅多占镜像体积，运行时无害；统一装进共享镜像，
+# 省去再维护一份 Dockerfile.desktop。X 转发由 compose 的 desktop 服务挂载。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils \
+      libatspi2.0-0 libdrm2 libgbm1 libasound2 libsecret-1-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # 构建期就把 pnpm 烧进镜像（经国内镜像源），避免运行时 corepack 联网下载。
 ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+# Electron 二进制 / electron-builder 工具也走 npmmirror，否则容器内装 electron
+# 时从 GitHub releases 拉二进制必然超时。deps 服务 install electron 时即生效。
+ENV ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/
+ENV ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 WORKDIR /workspace

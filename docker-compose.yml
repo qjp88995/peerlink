@@ -77,6 +77,48 @@ services:
       - traefik.http.routers.pl-signal.priority=10
       - traefik.http.services.pl-signal.loadbalancer.server.port=3001
 
+  # ─── 桌面版（apps/desktop）开发壳 ───
+  # 默认不启动（profile=desktop），需要时显式拉起：
+  #   docker compose --profile desktop up desktop
+  # 容器内自带一套 vite（同容器 localhost:5173，HMR 同源正常）+ esbuild watch
+  # + electron，GUI 经挂载的 WSLg socket 显示到真实 WSL / Windows 桌面。
+  # electron 主进程日志 `docker compose logs -f desktop` 读取，便于容器内调试。
+  # 屏幕共享 / 托盘等与合成器相关的能力需真机复核（见计划 Task 9）。
+  #
+  # 重要：docker daemon 跑在真实 WSL（非编排器所在的沙箱），下列挂载路径与
+  # ${DISPLAY} 等变量均由真实 WSL 解析/继承。按标准 WSLg 布局配置；若真机
+  # WSLg 路径不同，覆盖对应变量（建议放 .env）。
+  desktop:
+    <<: *app-build
+    profiles:
+      - desktop
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      signaling:
+        condition: service_started
+    # 注意：不设 RUNNING_IN_DOCKER，让容器内 electron 直连同容器 vite 时
+    # 走同源 HMR（避免 web 服务那套 clientPort=8894 的反代 HMR 设置）。
+    environment:
+      # WSLg GUI 转发：从真实 WSL 继承，给出标准默认值。
+      DISPLAY: ${DISPLAY:-:0}
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-wayland-0}
+      XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-/mnt/wslg/runtime-dir}
+      # 音频（来电振铃 / 提示音）走 WSLg 的 PulseAudio。
+      PULSE_SERVER: ${PULSE_SERVER:-/mnt/wslg/PulseServer}
+      # 容器内无 setuid sandbox，禁用之（仅 dev 容器，安全姿势不变）。
+      ELECTRON_DISABLE_SANDBOX: '1'
+      # 容器内通常无硬件 GL，强制软件渲染避免 electron 崩溃 / 黑屏。
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    command: pnpm --filter @peerlink/desktop dev
+    volumes:
+      - ./:/workspace
+      # WSLg：X11 socket + wayland/音频运行时目录，透传真实 WSL 的 socket。
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /mnt/wslg:/mnt/wslg
+    networks:
+      - internal
+
   # ─── 计划 3 加入 web 服务 ───
   web:
     <<: *app-build
