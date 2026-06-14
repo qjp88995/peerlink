@@ -10,6 +10,7 @@ import {
 import { ConfigStore, type IceConfig } from './config-store';
 import { installScreenPicker } from './screen-picker';
 import { domainFromSignalUrl } from './signal-url';
+import { setupTray, wireCloseToTray } from './tray';
 
 const isDev = !app.isPackaged;
 const DEV_URL = 'http://localhost:5173';
@@ -18,6 +19,24 @@ registerSchemePrivileges();
 
 let mainWindow: BrowserWindow | undefined;
 let config: ConfigStore;
+let quitting = false;
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+app.on('before-quit', () => {
+  quitting = true;
+});
 
 function currentBootstrap() {
   const c = config.get();
@@ -51,6 +70,7 @@ function createWindow(): void {
     mainWindow.loadURL(`${APP_ORIGIN}/`);
   }
   installScreenPicker(mainWindow.webContents.session, () => mainWindow!);
+  wireCloseToTray(mainWindow, () => quitting);
 }
 
 app.whenReady().then(() => {
@@ -70,11 +90,24 @@ app.whenReady().then(() => {
 
   if (!isDev) registerAppProtocol(join(__dirname, 'renderer'));
   createWindow();
+
+  setupTray({
+    getWindow: () => mainWindow,
+    isQuitting: () => quitting,
+    requestQuit: () => {
+      quitting = true;
+      app.quit();
+    },
+  });
 });
 
 app.on('window-all-closed', () => {
-  // Task 6 会改成"关窗到托盘不退出"；当前先保留默认。
-  if (process.platform !== 'darwin') app.quit();
+  // 后台常驻：不退出。退出只经托盘菜单 → before-quit → quit。
+});
+
+app.on('activate', () => {
+  mainWindow?.show();
+  app.dock?.show();
 });
 
 export { config, mainWindow };
