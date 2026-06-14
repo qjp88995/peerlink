@@ -13,8 +13,9 @@
 - **多文件 + 整个文件夹**：保留目录结构，支持 GB 级大文件流式落盘，不全攒内存。
 - **掉线灰显 + 自愈重连**：对方掉线时会话灰显保留、历史可看，直到手动移除或刷新；通话中 ICE 短暂断连有宽限期自愈。
 - **可插拔 ICE**：默认公共 STUN，TURN 可在部署侧按环境变量注入。
+- **桌面客户端**：`apps/desktop` 用 Electron 复用整套 Web 渲染层，补上浏览器没有的能力——系统托盘、关闭即最小化到托盘、原生桌面通知（来消息/来电）、原生屏幕源选择器、应用内可配信令域名 + ICE。出 macOS / Windows / Linux 安装包。
 
-> 当前为**阶段一（Web 版）**。原生 App（阶段二）、微信小程序（阶段三）、自建 TURN（阶段 1.5）为后续独立计划，复用本阶段的信令服务与协议包。
+> Web 版与桌面壳（Electron）已交付；**移动端原生 App**、微信小程序、自建 TURN 为后续独立计划，复用本阶段的信令服务与协议包。
 
 ---
 
@@ -51,36 +52,38 @@
 peerlink/
 ├── apps/
 │   ├── web/                  # @peerlink/web — React 19 + Vite + Tailwind v4 前端
+│   ├── desktop/              # @peerlink/desktop — Electron 桌面壳，复用 @peerlink/web
 │   └── signaling/            # @peerlink/signaling — 轻量 ws + zod + pino 信令服务
 ├── packages/
 │   └── protocol/             # @peerlink/protocol — zod 信令消息 + 文件分片协议 + CRC32
 ├── docker/                   # 开发镜像 + 生产镜像（web/signaling）+ ICE 运行时注入
 ├── docker-compose.yml        # 容器内开发：deps + traefik + web + signaling
 ├── docker-compose.override.yml  # 仅把 Traefik 端口暴露到宿主
-├── .github/workflows/        # CI（lint/typecheck/test × Node 22/24 + 依赖审计）+ 生产镜像构建发布
+├── .github/workflows/        # CI（Node 22/24 + 依赖审计）+ 镜像 staging/正式发布 + 桌面安装包 + TCR 同步
 └── pnpm-workspace.yaml       # 含 catalog: 集中版本声明
 ```
 
-`apps/web` 与 `apps/signaling` 均依赖 `@peerlink/protocol`（`workspace:*`）——协议层是两端唯一事实源。
+`apps/web` 与 `apps/signaling` 均依赖 `@peerlink/protocol`（`workspace:*`）——协议层是两端唯一事实源；`apps/desktop` 依赖 `@peerlink/web` 整套渲染层，只包壳、不复制业务逻辑。
 
 ### 前端内部分层（`apps/web/src`）
 
-| 层                 | 位置                                                          | 职责                                                                                                                                                                                                            |
-| ------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `signaling-client` | `core/signaling-client.ts`                                    | WebSocket 连接与信令收发（zod 校验）                                                                                                                                                                            |
-| `peer-connection`  | `core/peer-connection.ts`                                     | 封装 `RTCPeerConnection`、ICE、DataChannel 建立；通话音频轨 `addTrack` + renegotiation + mute（对称收发）；可复用的视频 transceiver 供屏幕共享 `prepareSend/RecvVideo`                                          |
-| `conversation`     | `core/conversation.ts`                                        | 单会话对称编排器：一条 DataChannel 多路复用「多次文件传输 + 文字 + 语音消息 + 通话控制 + 屏幕共享控制」，按 `transferId`/`fileId`/`msgId`/`callId` 路由；通话 / 屏幕共享 / 语音三类媒体各委派给独立注入式状态机 |
-| `session-manager`  | `core/session-manager.ts`                                     | 多会话管理器：持有 N 个 `Conversation` handle，桥接到 store，统一处理来电/振铃；转发屏幕共享 start/stop                                                                                                         |
-| `call-session`     | `core/call-session.ts`                                        | 单路通话状态机（振铃 / 通话中 / 自愈宽限 / 结束），排他，固定 initiator 端发起 renegotiation 避免 glare                                                                                                         |
-| `screen-share`     | `core/screen-share.ts`                                        | 屏幕共享状态机（`none`/`local`/`remote`），一次一个演示者，依附通话 `callId`，固定 initiator 端 renegotiation                                                                                                   |
-| `voice-stream`     | `core/voice-stream.ts`                                        | 语音消息发送 + 接收组装状态机，按 `streamId` 认领数据帧，CRC32 校验；接收侧带 TTL，未收齐的消息超时即放弃，不留内存                                                                                             |
-| `transfer`         | `core/sender.ts` / `core/receiver.ts`                         | 单次文件分片、背压控制、组装、CRC32 校验（每个 transfer 一实例）                                                                                                                                                |
-| `voice`            | `core/voice-recorder.ts` / `core/mic.ts` / `core/ringtone.ts` | 语音消息录制（`MediaRecorder`）、麦克风采集（能力/权限探测 + 回声消除 AEC）、WebAudio 振铃音                                                                                                                    |
-| `storage`          | `core/storage/*`                                              | 接收端写入抽象（File System Access / 内存 Blob，按能力探测；不兼容场景门控拒收）                                                                                                                                |
-| `state`            | `state/conversation-store.ts`                                 | zustand 多会话列表 + 每会话统一时间线 `items[]` + 通话状态 + 屏幕共享状态（`screen` + `screenNonce`）                                                                                                           |
-| `ui`               | `features/chat/*` / `routes/*`                                | Inbox（会话列表）/ ConversationView / Timeline / 气泡 / Composer / CallPanel（含会议布局 + 屏幕共享 dock）/ CallChatRail（会议聊天侧栏）/ IncomingCallPrompt + TanStack 文件式路由                              |
+| 层                 | 位置                                                          | 职责                                                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signaling-client` | `core/signaling-client.ts`                                    | WebSocket 连接与信令收发（zod 校验）                                                                                                                                                                                                              |
+| `peer-connection`  | `core/peer-connection.ts`                                     | 封装 `RTCPeerConnection`、ICE、DataChannel 建立；通话音频轨 `addTrack` + renegotiation + mute（对称收发）；可复用的视频 transceiver 供屏幕共享 `prepareSend/RecvVideo`                                                                            |
+| `conversation`     | `core/conversation.ts`                                        | 单会话对称编排器：一条 DataChannel 多路复用「多次文件传输 + 文字 + 语音消息 + 通话控制 + 屏幕共享控制」，按 `transferId`/`fileId`/`msgId`/`callId` 路由；通话 / 屏幕共享 / 语音三类媒体各委派给独立注入式状态机                                   |
+| `session-manager`  | `core/session-manager.ts`                                     | 多会话管理器：持有 N 个 `Conversation` handle，桥接到 store，统一处理来电/振铃；转发屏幕共享 start/stop                                                                                                                                           |
+| `call-session`     | `core/call-session.ts`                                        | 单路通话状态机（振铃 / 通话中 / 自愈宽限 / 结束），排他，固定 initiator 端发起 renegotiation 避免 glare                                                                                                                                           |
+| `screen-share`     | `core/screen-share.ts`                                        | 屏幕共享状态机（`none`/`local`/`remote`），一次一个演示者，依附通话 `callId`，固定 initiator 端 renegotiation                                                                                                                                     |
+| `voice-stream`     | `core/voice-stream.ts`                                        | 语音消息发送 + 接收组装状态机，按 `streamId` 认领数据帧，CRC32 校验；接收侧带 TTL，未收齐的消息超时即放弃，不留内存                                                                                                                               |
+| `transfer`         | `core/sender.ts` / `core/receiver.ts` / `core/channel.ts`     | 单次文件分片、背压控制、组装、CRC32 校验（每个 transfer 一实例）；`channel.ts` 是 `SendChannel` 发送通道抽象，把 sender 与 `RTCDataChannel` 解耦便于单测                                                                                          |
+| `voice`            | `core/voice-recorder.ts` / `core/mic.ts` / `core/ringtone.ts` | 语音消息录制（`MediaRecorder`）、麦克风采集（能力/权限探测 + 回声消除 AEC）、WebAudio 振铃音                                                                                                                                                      |
+| `storage`          | `core/storage/*`                                              | 接收端写入抽象（File System Access / 内存 Blob，按能力探测；不兼容场景门控拒收）                                                                                                                                                                  |
+| `state`            | `state/conversation-store.ts` / `state/session-manager.ts`    | zustand 多会话列表 + 每会话统一时间线 `items[]` + 通话状态 + 屏幕共享状态（`screen` + `screenNonce`）；`state/session-manager.ts` 把 `core/session-manager` 纯逻辑桥接到 store                                                                    |
+| `desktop-bridge`   | `lib/desktop-bridge.ts`                                       | 探测桌面壳经 preload 注入的 `window.peerlink` 桥（配信令域名/ICE、推原生通知、激活会话）；浏览器中桥为 `undefined`，相关 UI 优雅降级隐藏                                                                                                          |
+| `ui`               | `features/*` / `routes/*`                                     | Inbox（会话列表）/ ConversationView / Timeline / 气泡 / Composer / CallPanel（含会议布局 + 屏幕共享 dock）/ CallChatRail（会议聊天侧栏）/ IncomingCallPrompt / RoomShare（口令二维码）/ SettingsPanel（桌面壳信令/ICE 配置）+ TanStack 文件式路由 |
 
-后续 App 可替换 `storage` / `ui`，复用 `protocol` / `conversation` / `session-manager` / `call-session` / `screen-share` / `voice-stream` / `transfer` / `peer-connection` / `signaling-client`。
+后续 App 可替换 `storage` / `ui`，复用 `protocol` / `conversation` / `session-manager` / `call-session` / `screen-share` / `voice-stream` / `transfer` / `peer-connection` / `signaling-client`。`apps/desktop`（Electron）已经这样做——整体复用 `@peerlink/web` 渲染层，仅在主进程补托盘 / 原生通知 / 屏幕源选择器 / 信令域名 + ICE 配置（详见下文「桌面客户端」）。
 
 ---
 
@@ -179,14 +182,43 @@ docker compose up
 
 ---
 
-## 部署
+## 桌面客户端（Electron）
 
-生产镜像由 `.github/workflows/docker-publish.yml` 在打 `v*.*.*` tag 时构建并推送到 `ghcr.io`：
+`apps/desktop`（`@peerlink/desktop`）是 Electron 桌面壳——**渲染层整体复用 `@peerlink/web`（`workspace:*`），不复制任何业务逻辑**，只在主进程补浏览器没有的能力：
+
+- **自定义 `app://` 协议**：打包后用 `app://peerlink/...` 托管 renderer 静态产物（`app-protocol.ts`，路径越界回退 `index.html`）。
+- **系统托盘 + 关闭即最小化到托盘**：`tray.ts`，配合单实例锁（再次启动聚焦已有窗口）。
+- **原生桌面通知**：未读增长且窗口未聚焦/不在该会话时弹系统通知（来消息/来电），点击激活对应会话（`notifications.ts` + web 侧 `features/settings/desktop-notifications.ts`）。
+- **原生屏幕源选择器**：Electron 的 `getDisplayMedia` 需自带 picker，`screen-picker.ts` + `src/picker` 用 `desktopCapturer` 列出屏幕/窗口供选。
+- **应用内配置信令域名 + ICE**：`SettingsPanel` 写入主进程 `config-store`（本地持久化），`signal-url.ts` 把域名规范化为 `ws(s)://…/signal`，默认 `wss://peerlink.qinjiapeng.com/signal`。
+
+主进程 ⇄ 渲染层经 `preload` 注入的 `window.peerlink` 桥通信；web 侧用 `lib/desktop-bridge.ts` 探测该桥，**浏览器中桥为 `undefined`、相关 UI 优雅降级隐藏**，故同一份前端代码既能跑浏览器也能进壳。`build.mjs`（esbuild）打 main/preload/picker，`electron-builder` 出 macOS dmg / Windows portable+nsis / Linux AppImage+deb。
+
+```bash
+pnpm --filter @peerlink/desktop dev    # web dev server + esbuild watch + electron 一把起
+pnpm --filter @peerlink/desktop dist   # 本地构建安装包到 apps/desktop/release/
+```
+
+---
+
+## 部署 / CI
+
+`.github/workflows/` 下的流水线：
+
+| 工作流                | 触发                        | 产物 / 动作                                                                    |
+| --------------------- | --------------------------- | ------------------------------------------------------------------------------ |
+| `ci.yml`              | push / PR                   | lint + typecheck + test × Node 22/24 + 生产依赖审计                            |
+| `docker-staging.yml`  | push 到 `main`              | 构建 `peerlink-web` / `peerlink-signaling` 的 **staging** 镜像推到 ghcr        |
+| `docker-publish.yml`  | 打 `v*.*.*` tag             | 构建**正式**镜像（同两个）推到 ghcr                                            |
+| `desktop-release.yml` | 打 `v*` tag / 手动 dispatch | ubuntu/windows/macos 三平台矩阵跑 `electron-builder`，传 artifact / 建 Release |
+| `push-tcr.yml`        | 手动 dispatch               | 把 ghcr 镜像同步到腾讯云 TCR（staging / latest / both）                        |
+
+镜像：
 
 - `ghcr.io/<owner>/peerlink-web`（nginx 托管静态产物，并把 `/signal` 反代到信令服务）
 - `ghcr.io/<owner>/peerlink-signaling`
 
-**ICE 配置走运行时注入**：web 容器启动时由 `docker/40-peerlink-ice-config.sh` 按环境变量（`STUN_URLS` / `TURN_URL` / `TURN_USERNAME` / `TURN_CREDENTIAL`）生成 `ice-config.js`——改环境变量后重启容器即生效，**无需重建镜像**。
+**ICE 配置走运行时注入**：web 容器启动时由 `docker/40-peerlink-ice-config.sh` 按环境变量（`STUN_URLS` / `TURN_URL` / `TURN_USERNAME` / `TURN_CREDENTIAL`）生成 `ice-config.js`——改环境变量后重启容器即生效，**无需重建镜像**。桌面壳则由用户在应用内设置面板配置信令域名 + ICE 并本地持久化，无需重打包。
 
 **信令公网加固**（均 env 可配，默认不破坏局域网/开发）：
 
@@ -203,6 +235,7 @@ docker compose up
 ## 技术栈
 
 - **前端**：React 19 · Vite · Tailwind CSS v4 · TanStack Router · zustand · sonner · lucide-react · qrcode
+- **桌面**：Electron · electron-builder · esbuild（main/preload/picker 打包）
 - **信令**：Node ≥22 · `ws` · zod · pino（轻量，无 NestJS）
 - **协议**：zod schema + CRC32
 - **工程**：pnpm@10 workspace（`catalog:` 集中版本）· Turborepo · ESLint flat config · Prettier · Husky + lint-staged · Vitest · 国内镜像源（npmmirror）
