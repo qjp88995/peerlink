@@ -29,6 +29,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # nsis 自带默认名 `${productName} Setup ${version}.${ext}` 含空格，
+  # 且优先级高于 win.artifactName，必须在此单独覆盖。
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
