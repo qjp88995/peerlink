@@ -9,7 +9,7 @@
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
-    "dev": "concurrently -k \"pnpm --filter @peerlink/web dev\" \"node build.mjs --watch\" \"wait-on http://localhost:5173 dist/main.cjs && electron .\"",
+    "dev": "concurrently -k \"pnpm --filter @peerlink/web dev\" \"node build.mjs --watch\" \"wait-on http://localhost:5173 dist/main.cjs && electron --no-sandbox .\"",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

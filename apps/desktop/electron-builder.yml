@@ -1,5 +1,7 @@
 appId: com.qinjiapeng.peerlink
 productName: PeerLink
+# 显式可执行名：默认会取包名 @peerlink/desktop，含非法字符 @ 导致 Linux AppImage 构建失败。
+executableName: PeerLink
 directories:
   output: release
 files:
