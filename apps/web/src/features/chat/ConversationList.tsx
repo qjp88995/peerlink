@@ -1,8 +1,10 @@
 import { useState } from 'react';
 
-import { Plus, X } from 'lucide-react';
+import { Plus, Settings, X } from 'lucide-react';
 
+import { SettingsPanel } from '@/features/settings/SettingsPanel';
 import { cn } from '@/lib/cn';
+import { isDesktop } from '@/lib/desktop-bridge';
 import { useRoomsStore } from '@/state/conversation-store';
 import { sessionManager } from '@/state/session-manager';
 
@@ -35,6 +37,7 @@ export function ConversationList({ className }: { className?: string }) {
   const order = useRoomsStore(s => s.order);
   const activeId = useRoomsStore(s => s.activeId);
   const [link, setLink] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   function joinFromLink() {
     const roomId = parseRoomId(link);
@@ -54,13 +57,24 @@ export function ConversationList({ className }: { className?: string }) {
         <span className="font-display text-lg font-extrabold tracking-tight">
           Peer<span className="text-signal">Link</span>
         </span>
-        <button
-          onClick={() => sessionManager.create()}
-          aria-label="新建会话"
-          className="flex size-8 items-center justify-center rounded-lg border border-line text-fg-muted transition-colors hover:border-fg-faint hover:text-fg"
-        >
-          <Plus className="size-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {isDesktop() && (
+            <button
+              onClick={() => setShowSettings(true)}
+              aria-label="设置"
+              className="flex size-8 items-center justify-center rounded-lg border border-line text-fg-muted transition-colors hover:border-fg-faint hover:text-fg"
+            >
+              <Settings className="size-4" />
+            </button>
+          )}
+          <button
+            onClick={() => sessionManager.create()}
+            aria-label="新建会话"
+            className="flex size-8 items-center justify-center rounded-lg border border-line text-fg-muted transition-colors hover:border-fg-faint hover:text-fg"
+          >
+            <Plus className="size-4" />
+          </button>
+        </div>
       </div>
 
       <div className="px-3 pb-2">
@@ -124,6 +138,7 @@ export function ConversationList({ className }: { className?: string }) {
           );
         })}
       </ul>
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </aside>
   );
 }
