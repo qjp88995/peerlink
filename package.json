@@ -37,6 +37,10 @@
       "prettier --write",
       "eslint --fix -c apps/web/eslint.config.js"
     ],
+    "apps/desktop/**/*.{ts,mjs}": [
+      "prettier --write",
+      "eslint --fix -c apps/desktop/eslint.config.mjs"
+    ],
     "*.{json,md,css,yml,yaml}": [
       "prettier --write"
     ]
