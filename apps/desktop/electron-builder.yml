@@ -14,6 +14,10 @@ mac:
   icon: resources/icon.png
 win:
   target:
+    # portable = 单个自包含 .exe，双击即运行、无需安装（直接执行用这个）
+    - target: portable
+      arch: [x64]
+    # nsis = 带向导的安装包（可选，安装到系统）
     - target: nsis
       arch: [x64]
   icon: resources/icon.png
