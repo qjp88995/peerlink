@@ -33,3 +33,5 @@ linux:
     - deb
   category: Network
   icon: resources/icon.png
+  # .deb 必须有 maintainer；package.json 的 author 未带邮箱，这里显式给出。
+  maintainer: qjp88995 <qjp88995@users.noreply.github.com>
