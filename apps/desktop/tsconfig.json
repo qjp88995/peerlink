@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "noEmit": true
+  },
+  "include": ["src", "build.mjs"]
+}

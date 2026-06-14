@@ -1,0 +1,34 @@
+{
+  "name": "@peerlink/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch & wait-on dist/main.cjs && electron .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist": "node build.mjs && electron-builder"
+  },
+  "dependencies": {
+    "@peerlink/web": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "concurrently": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
+    "esbuild": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-simple-import-sort": "catalog:",
+    "globals": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:",
+    "wait-on": "catalog:"
+  }
+}
