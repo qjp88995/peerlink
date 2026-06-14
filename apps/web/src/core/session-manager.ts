@@ -334,9 +334,15 @@ export class SessionManager {
         // 流存入非响应式 Map，须显式通知 store 触发重渲染、绑定 video。
         this.store.bumpScreen(id);
       },
-      onScreenError: () => {
-        // 共享失败（取消/无权限）：状态由模块回到 none，此处可选 toast。
-      },
+      onScreenError: reason =>
+        // 本端发起共享失败（拒绝授权 / 浏览器不支持）：状态由模块自行回到 none，
+        // 这里复用会议错误通道给用户一个 toast（screen- 前缀区分本端视角文案）。
+        this.store.setCallError(
+          id,
+          reason === 'permission-denied'
+            ? 'screen-denied'
+            : 'screen-unsupported'
+        ),
     };
   }
 }

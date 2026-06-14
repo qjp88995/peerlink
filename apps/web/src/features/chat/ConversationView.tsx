@@ -22,6 +22,9 @@ const CALL_ERROR_TEXT: Record<string, string> = {
   'permission-denied': '对方拒绝了麦克风权限',
   declined: '对方拒绝了邀请',
   busy: '对方正在会议中',
+  // 本端发起屏幕共享失败（区别于上面的对方视角文案）
+  'screen-denied': '屏幕共享权限被拒绝',
+  'screen-unsupported': '此浏览器不支持屏幕共享',
 };
 
 function MobileHeader({ session }: { session: Session }) {
